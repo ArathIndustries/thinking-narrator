@@ -178,8 +178,8 @@ def main():
                     help="also narrate subagent (sidechain) thinking")
     ap.add_argument("--rate", type=int, default=2,
                     help="SAPI speech rate, -10..10 (default 2)")
-    ap.add_argument("--max-chars", type=int, default=1500,
-                    help="truncate blocks longer than this; 0 = no limit (default 1500)")
+    ap.add_argument("--max-chars", type=int, default=0,
+                    help="optional cap; 0 = read full thoughts (default)")
     ap.add_argument("--poll", type=float, default=0.5,
                     help="poll interval in seconds (default 0.5)")
     args = ap.parse_args()

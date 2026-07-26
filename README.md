@@ -1,8 +1,42 @@
 # thinking-narrator
 
-Tails Claude Code session transcripts and speaks each new `thinking` block
-through Windows SAPI. Run it in a second terminal while working in one or
-more Claude Code chats; it narrates the model's thinking near-live.
+Speaks Claude Code `thinking` blocks aloud, near-live or as history replay.
+Two entry points:
+
+- **`app.py`** — the single-chat app. Interactive: lists recent sessions,
+  you pick one, choose live-follow / full replay / last-N-blocks, and pick a
+  neural voice. Watches exactly one transcript; run one instance per chat.
+- **`narrate.py`** — the background watcher. Tails every session at once,
+  per-session SAPI voices; useful when you want ambient narration of
+  whatever any chat is thinking.
+
+## app.py
+
+```
+py app.py                                  # interactive: pick session, mode, voice
+py app.py --session 1 --mode live          # newest session, live, no prompts
+py app.py --session f9fc --mode last:5     # replay last 5 blocks, then follow live
+py app.py --session 1 --mode all --once    # replay full history, then exit
+py app.py --list-voices
+```
+
+- `--session` = list index, session-id prefix, or a full path.
+- Voices: Microsoft Edge neural TTS via `edge-tts` (pip; network required),
+  curated menu of 8 en-US/en-GB voices with in-menu preview (`pN`), 47
+  en-* voices total. No API key. Offline or on failure it falls back to SAPI
+  with a printed warning.
+- Playback via winmm MCI, which enables keys: **space** pause/resume,
+  **s** skip block, **q** quit (edge engine only; SAPI has no pause).
+- `--speed +N%` (default +10), `--engine sapi` to force offline,
+  `--newest-only` to drop backlog in live mode (default speaks everything
+  in order — skip is a keypress away).
+- A scripted run (both `--session` and `--mode` given) never prompts;
+  defaults fill in (voice: Christopher).
+
+Dependency: `py -m pip install edge-tts` (installed 2026-07-26; verified
+47 en voices, synthesis + MCI playback).
+
+## narrate.py (background multi-chat watcher)
 
 ## Verified facts (2026-07-26, desktop "Arath")
 
@@ -55,8 +89,11 @@ files existing at startup are read from their end (no replay of history).
 - **Backlog policy (default):** speech is slower than generation, so by default
   the queue is drained to the newest block before speaking ("what is it
   thinking *now*" — across all sessions). `--all` reads everything in order.
-- **Truncation:** blocks over `--max-chars` (default 1500 ≈ 75 s of speech) are
-  cut at a word boundary with an audible "truncated" marker.
+- **No truncation by default (user ruling 2026-07-26):** full thoughts are
+  read, however long. `--max-chars N` is an opt-in cap (cuts at a word
+  boundary with an audible "truncated" marker). Consequence: a long raw
+  block (9.8k chars observed) is minutes of speech — in `app.py` the `s`
+  key skips; in `narrate.py` the drop-backlog default keeps you current.
 - **Subagent thinking** (`isSidechain` records) is skipped unless
   `--include-agents`.
 
