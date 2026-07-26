@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
-"""Single-chat thinking narrator app.
+"""Thinking narrator app: follows the chat you're working in.
 
-Interactive launcher: pick one Claude Code session, then live-follow it,
-replay its full thinking history, or replay the last N blocks — in a neural
-voice. Watches exactly one transcript (no cross-chat scanning); run one
-instance per chat you care about.
+Default (bare launch): auto-follow — narrates whichever Claude Code chat is
+currently generating thinking, and switches when a different chat becomes
+active. Runtime keys let you lock to the current chat, unlock back to
+auto-follow, or pick a specific session to lock onto. Only one chat is ever
+narrated at a time.
+
+Pinned start: `--session <idx|id-prefix|path>` (or `--pick` for the menu)
+locks from launch and enables history replay via `--mode all` / `--mode
+last:N` before following live.
 
 Engines:
   edge  — Microsoft Edge neural TTS via edge-tts (network, free, smooth).
-          Playback through winmm MCI, which enables pause/skip/quit keys.
+          Playback through winmm MCI, which enables the playback keys.
   sapi  — offline Windows SAPI fallback (robotic, no pause key).
 
-During edge playback: space = pause/resume, s = skip block, q = quit.
+Keys during playback: space = pause/resume, s = skip block, q = quit.
+Keys between blocks:  l = lock/unlock current chat, c = choose chat, q = quit.
 """
 
 import argparse
@@ -162,7 +168,7 @@ def pick_session(root):
     for i, (p, mt, proj, title) in enumerate(rows, 1):
         print(f" {i:2}  {mt}  {proj:<22.22}  {title}")
     while True:
-        c = ask("\nSession # (q quits): ").lower()
+        c = ask("\nSession # (q cancels): ").lower()
         if c == "q":
             raise Quit()
         if c.isdigit() and 1 <= int(c) <= len(rows):
@@ -205,6 +211,86 @@ def prompt_voice(args):
                 print(f"[warn] preview failed: {e}", file=sys.stderr)
 
 
+# ---------- following ----------
+
+def collect(tail, args):
+    return [(rec.get("timestamp", ""), t)
+            for rec in tail.read_new()
+            for t in narrate.extract_thinking(rec, args.include_agents)]
+
+
+class Follower:
+    """Tails every transcript; narrates exactly one — auto-chosen or locked."""
+
+    def __init__(self, root, args):
+        self.root = root
+        self.args = args
+        self.tails = {p: narrate.Tail(p, False)
+                      for p in glob.glob(os.path.join(root, "*", "*.jsonl"))}
+        self.active = None
+        self.locked = False
+        self._last_scan = time.time()
+
+    def lock_to(self, path):
+        if path not in self.tails:
+            self.tails[path] = narrate.Tail(path, False)
+        self.active, self.locked = path, True
+        print(f'[app] locked to: "{narrate.session_title(path)}"')
+
+    def toggle_lock(self):
+        if self.locked:
+            self.locked = False
+            print("[app] unlocked — auto-follow")
+        else:
+            self.locked = True
+            t = (narrate.session_title(self.active) if self.active
+                 else "next chat that generates")
+            print(f'[app] locked to: "{t}"')
+
+    def poll(self):
+        # pick up chats started after launch
+        if time.time() - self._last_scan > 3:
+            self._last_scan = time.time()
+            for p in glob.glob(os.path.join(self.root, "*", "*.jsonl")):
+                if p not in self.tails:
+                    self.tails[p] = narrate.Tail(p, from_start=True)
+        per = {}
+        for path, tail in list(self.tails.items()):
+            try:
+                blocks = collect(tail, self.args)
+            except OSError:
+                del self.tails[path]
+                continue
+            if blocks:
+                per[path] = blocks
+        if not per:
+            return []
+        if self.locked and self.active:
+            return per.get(self.active, [])
+        # auto: the session with the newest block wins
+        newest = max(per, key=lambda p: per[p][-1][0])
+        if newest != self.active:
+            self.active = newest
+            print(f'[app] following: "{narrate.session_title(newest)}"')
+        return per[self.active]
+
+
+def handle_idle_keys(follower):
+    if not KEYS:
+        return
+    while msvcrt.kbhit():
+        k = msvcrt.getwch().lower()
+        if k == "q":
+            raise Quit()
+        elif k == "l":
+            follower.toggle_lock()
+        elif k == "c":
+            try:
+                follower.lock_to(pick_session(follower.root))
+            except Quit:
+                print("[app] pick cancelled")
+
+
 # ---------- main ----------
 
 def parse_mode(s):
@@ -213,12 +299,6 @@ def parse_mode(s):
     if s.startswith("last:") and s[5:].isdigit():
         return "last", int(s[5:])
     raise argparse.ArgumentTypeError("mode must be live, all, or last:N")
-
-
-def collect(tail, args):
-    return [(rec.get("timestamp", ""), t)
-            for rec in tail.read_new()
-            for t in narrate.extract_thinking(rec, args.include_agents)]
 
 
 def say(ts, text, args):
@@ -230,9 +310,13 @@ def say(ts, text, args):
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Narrate one Claude Code chat: live, full replay, or last N blocks.")
-    ap.add_argument("--session", help="transcript path, id prefix, or list index")
-    ap.add_argument("--mode", type=parse_mode, help="live | all | last:N")
+        description="Narrate the chat you're in: auto-follow the active chat, "
+                    "or lock to one (runtime keys or --session).")
+    ap.add_argument("--session", help="lock from launch: index, id prefix, or path")
+    ap.add_argument("--pick", action="store_true",
+                    help="lock from launch via the interactive session menu")
+    ap.add_argument("--mode", type=parse_mode,
+                    help="live | all | last:N (history replay needs --session/--pick)")
     ap.add_argument("--voice", help="edge voice name (see --list-voices)")
     ap.add_argument("--engine", choices=("auto", "edge", "sapi"), default="auto")
     ap.add_argument("--speed", type=int, default=10,
@@ -242,7 +326,7 @@ def main():
                     help="optional cap; 0 = read full thoughts (default)")
     ap.add_argument("--poll", type=float, default=0.5)
     ap.add_argument("--newest-only", action="store_true",
-                    help="in live mode, drop backlog and speak only the newest block")
+                    help="drop backlog, speak only the newest pending block")
     ap.add_argument("--include-agents", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--once", action="store_true",
@@ -252,7 +336,8 @@ def main():
 
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8", errors="replace")
+            stream.reconfigure(encoding="utf-8", errors="replace",
+                               line_buffering=True)
 
     if args.list_voices:
         for name, desc in VOICES:
@@ -267,14 +352,22 @@ def main():
 
     interactive = sys.stdin.isatty()
     try:
+        pinned = None
         if args.session:
-            path = resolve_session(args.root, args.session)
-        else:
-            assert interactive, "no TTY: pass --session (plus --mode/--voice as needed)"
-            path = pick_session(args.root)
-        print(f'[app] session: "{narrate.session_title(path)}"')
+            pinned = resolve_session(args.root, args.session)
+        elif args.pick:
+            assert interactive, "--pick needs a TTY"
+            pinned = pick_session(args.root)
+        assert pinned or not (args.mode or args.once), \
+            "--mode/--once need --session or --pick"
 
-        mode, n = args.mode if args.mode else (prompt_mode() if interactive else ("live", 0))
+        mode, n = ("live", 0)
+        if pinned:
+            print(f'[app] locked to: "{narrate.session_title(pinned)}"')
+            if args.mode:
+                mode, n = args.mode
+            elif interactive and args.pick:
+                mode, n = prompt_mode()
 
         scripted = bool(args.session and args.mode)
         if not args.voice:
@@ -285,26 +378,35 @@ def main():
                 args.voice = DEFAULT_VOICE
         engine = "edge-tts" if (args.engine != "sapi" and HAVE_EDGE) else "SAPI"
         print(f"[app] engine: {engine}, voice: {args.voice}, speed: {args.speed:+d}%")
-        if KEYS:
-            print("[keys] space = pause/resume, s = skip block, q = quit")
 
-        tail = narrate.Tail(path, mode != "live")
-        if mode != "live":
-            backlog = collect(tail, args)
-            if mode == "last":
-                backlog = backlog[-n:]
-            print(f"[app] replaying {len(backlog)} block(s)")
-            for ts, text in backlog:
-                say(ts, text, args)
-        if not args.once:
-            print("[app] following live (Ctrl+C stops)")
-            while True:
-                blocks = collect(tail, args)
-                if args.newest_only and len(blocks) > 1:
-                    blocks = blocks[-1:]
-                for ts, text in blocks:
+        follower = Follower(args.root, args)
+        if pinned:
+            tail = narrate.Tail(pinned, mode != "live")
+            if mode != "live":
+                backlog = collect(tail, args)
+                if mode == "last":
+                    backlog = backlog[-n:]
+                print(f"[app] replaying {len(backlog)} block(s)")
+                for ts, text in backlog:
                     say(ts, text, args)
-                time.sleep(args.poll)
+                if args.once:
+                    print("[app] done")
+                    return
+            follower.tails[pinned] = tail  # keep read position; no re-replay
+            follower.active, follower.locked = pinned, True
+        else:
+            print("[app] auto-follow: narrating whichever chat is generating")
+        if KEYS:
+            print("[keys] space pause | s skip | q quit | l lock/unlock | c choose chat")
+        print("[app] following (Ctrl+C stops)")
+        while True:
+            handle_idle_keys(follower)
+            blocks = follower.poll()
+            if args.newest_only and len(blocks) > 1:
+                blocks = blocks[-1:]
+            for ts, text in blocks:
+                say(ts, text, args)
+            time.sleep(args.poll)
     except (Quit, KeyboardInterrupt):
         print("\n[app] stopped")
 

@@ -3,24 +3,35 @@
 Speaks Claude Code `thinking` blocks aloud, near-live or as history replay.
 Two entry points:
 
-- **`app.py`** — the single-chat app. Interactive: lists recent sessions,
-  you pick one, choose live-follow / full replay / last-N-blocks, and pick a
-  neural voice. Watches exactly one transcript; run one instance per chat.
+- **`app.py`** — the app. Bare launch auto-follows whichever chat is
+  currently generating and switches with you between chats; lock it to one
+  chat (at launch or at runtime) when you want it pinned. One narrated chat
+  at a time, always.
 - **`narrate.py`** — the background watcher. Tails every session at once,
   per-session SAPI voices; useful when you want ambient narration of
-  whatever any chat is thinking.
+  every chat simultaneously.
 
 ## app.py
 
 ```
-py app.py                                  # interactive: pick session, mode, voice
-py app.py --session 1 --mode live          # newest session, live, no prompts
-py app.py --session f9fc --mode last:5     # replay last 5 blocks, then follow live
+py app.py                                  # auto-follow the active chat (voice menu)
+py app.py --pick                           # choose a session to lock to, via menu
+py app.py --session 1 --mode live          # locked to newest session, no prompts
+py app.py --session f9fc --mode last:5     # replay last 5 blocks, then follow it live
 py app.py --session 1 --mode all --once    # replay full history, then exit
 py app.py --list-voices
 ```
 
-- `--session` = list index, session-id prefix, or a full path.
+- **Auto-follow (default):** narrates the session with the newest thinking
+  block; when a different chat becomes active it announces the switch and
+  follows that one. Internally all transcripts are tailed so a switch never
+  misses blocks.
+- **Runtime keys (between blocks):** `l` = lock/unlock the currently
+  followed chat, `c` = open the session menu and lock to a choice,
+  `q` = quit.
+- **Lock at launch:** `--session` (list index, session-id prefix, or path)
+  or `--pick`; only locked sessions can replay history (`--mode all`,
+  `--mode last:N`) since replay needs a definite target.
 - Voices: Microsoft Edge neural TTS via `edge-tts` (pip; network required),
   curated menu of 8 en-US/en-GB voices with in-menu preview (`pN`), 47
   en-* voices total. No API key. Offline or on failure it falls back to SAPI

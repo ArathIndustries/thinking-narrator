@@ -187,7 +187,8 @@ def main():
 
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8", errors="replace")
+            stream.reconfigure(encoding="utf-8", errors="replace",
+                               line_buffering=True)
 
     voices = list_voices()
     q = queue.Queue()
