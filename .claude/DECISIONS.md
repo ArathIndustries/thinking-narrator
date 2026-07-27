@@ -39,3 +39,7 @@ Server binds 127.0.0.1 exclusively. Repo pushed private under ArathIndustries; f
 3. **Verification evidence:** commit messages carry verified-by-execution notes; LESSONS.md troubleshooting table records symptom→cause→fix→verification for every defect found.
 4. **Heartbeat/fail-loud:** user-launched (not scheduled), so no heartbeat; fail-loud = server asserts surface as HTTP 500s shown in the player status line, CLI asserts stop with messages, cache prune and count warmer print warnings on error rather than dying silently.
 5. **Acid test:** BACKLOG task due 2026-08-02 — one week of real use, friction logged; ROADMAP Phase 5 is gated on it.
+
+## 2026-07-26 — D9: Blog rulings (Arath, interactive)
+
+Repo flips public **the day the blog post ships** (not before, not never). Post angle: **"I made Claude Code think out loud"** — demo-first story ending at the karaoke player following live reasoning. Venue: **the portfolio site (arath.site)**, pending a page-order/IA review Arath opened in the same ruling session.
