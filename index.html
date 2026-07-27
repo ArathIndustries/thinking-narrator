@@ -253,7 +253,13 @@ function addCard(sid, b) {
     card.classList.toggle("open");
     e.target.textContent = card.classList.contains("open") ? "collapse" : "expand";
   };
-  card.onclick = () => play(sid, b.idx);
+  card.onclick = () => {
+    if (playing.sid === sid && playing.idx === b.idx && audio.src) {
+      if (audio.paused) audio.play(); else audio.pause();   // click again = pause/resume
+    } else {
+      play(sid, b.idx);
+    }
+  };
   S[sid].el.appendChild(card);
 }
 
