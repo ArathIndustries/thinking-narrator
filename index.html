@@ -44,15 +44,18 @@
   aside { border-right: 1px solid var(--edge); overflow-y: auto; padding: 8px; }
   aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .1em;
              color: var(--dim); padding: 6px 8px; }
-  .sess { width: 100%; text-align: left; background: none; border: 0;
-          color: var(--ink); padding: 8px 10px; border-radius: 6px;
-          cursor: pointer; font: inherit; display: block; }
+  .sess { position: relative; width: 100%; text-align: left; background: none;
+          border: 0; color: var(--ink); padding: 8px 64px 8px 10px;
+          border-radius: 6px; cursor: pointer; font: inherit; display: block; }
   .sess:hover { background: var(--surface); }
   .sess.sel { background: var(--surface); box-shadow: inset 2px 0 0 var(--amber); }
   .sess .t { display: block; white-space: nowrap; overflow: hidden;
              text-overflow: ellipsis; }
   .sess .m { display: block; color: var(--dim); font-size: 11.5px;
              font-family: Consolas, monospace; }
+  .sess .badge { position: absolute; right: 8px; top: 9px;
+                 background: var(--amber); color: #14100A; border-radius: 9px;
+                 font: 600 10.5px Consolas, monospace; padding: 2px 7px; }
 
   main { overflow-y: auto; padding: 16px 26px 30px; min-height: 0; }
   #empty { color: var(--dim); padding: 40px 0; text-align: center;
@@ -78,7 +81,6 @@
   .card .more:hover { color: var(--ink); }
   .card.playing { border-color: #4A4335; }
 
-  /* karaoke: unread dim, read bright, current word lit */
   .tx.karaoke { color: var(--faint); }
   .tx.karaoke .w.done { color: var(--ink); }
   .tx.karaoke .w.now { background: var(--amber); color: #14100A;
@@ -87,6 +89,13 @@
   #gen { display: none; color: var(--dim); font: italic 13.5px Georgia, serif;
          padding: 2px 4px 10px; }
   #gen .dot { color: var(--amber); animation: blink 1.2s infinite; }
+
+  #jump { position: fixed; right: 26px; bottom: 88px; display: none;
+          background: var(--raise); color: var(--amber);
+          border: 1px solid var(--amber); border-radius: 16px;
+          padding: 7px 14px; cursor: pointer; font: 12.5px Consolas, monospace;
+          box-shadow: 0 2px 12px rgba(0,0,0,.5); }
+  #jump:hover { background: var(--amber); color: #14100A; }
 
   footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
            padding: 10px 16px; border-top: 1px solid var(--edge);
@@ -142,14 +151,16 @@
   </main>
 </div>
 
+<button id="jump" title="Scroll to the newest thought">↓ newest</button>
+
 <footer>
-  <button class="btn" id="prevB" title="Previous thought">⏮</button>
-  <button class="btn" id="pp" title="Play / pause">▶</button>
-  <button class="btn" id="back" title="Back 10 seconds">−10s</button>
-  <button class="btn" id="nextB" title="Next thought">⏭</button>
+  <button class="btn" id="prevB" title="Previous thought (k)">⏮</button>
+  <button class="btn" id="pp" title="Play / pause (space)">▶</button>
+  <button class="btn" id="back" title="Back 10 seconds (←)">−10s</button>
+  <button class="btn" id="nextB" title="Next thought (j)">⏭</button>
   <span id="time">0:00 / 0:00</span>
   <input type="range" id="seek" min="0" max="1000" value="0">
-  <span class="vol">vol <input type="range" id="vol" min="0" max="1" step="0.01" value="1"></span>
+  <span class="vol">vol <input type="range" id="vol" min="0" max="1" step="0.01" value="1" title="Volume (m mutes)"></span>
   <select id="voice" title="Voice">
     <option value="en-US-ChristopherNeural">Christopher (US, calm)</option>
     <option value="en-US-EricNeural">Eric (US, mellow)</option>
@@ -163,6 +174,7 @@
   <span class="segs" id="speed" title="Speed">
     <button data-r="0.75">.75×</button><button data-r="1" class="act">1×</button><button data-r="1.25">1.25×</button><button data-r="1.5">1.5×</button><button data-r="2">2×</button>
   </span>
+  <label class="tog" title="After a thought ends, keep playing the next one"><input type="checkbox" id="through"> Play through</label>
   <label class="tog"><input type="checkbox" id="follow" checked> Follow active chat</label>
   <label class="tog"><input type="checkbox" id="autoplay" checked> Read new thoughts</label>
 </footer>
@@ -187,6 +199,21 @@ const j = async url => {
 const setStatus = t => statusEl.textContent = t;
 const fmt = s => isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "0:00";
 const cardEl = (sid, idx) => $(`blk-${sid}-${idx}`);
+const titleOf = sid => sessions.find(s => s.id === sid)?.title || "Thinking Narrator";
+
+/* ---------- tab title + favicon ---------- */
+const favLink = document.createElement("link");
+favLink.rel = "icon";
+document.head.appendChild(favLink);
+const fav = c => "data:image/svg+xml," + encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="${c}"/></svg>`);
+const FAV_ON = fav("#E8A33C"), FAV_OFF = fav("#4A4E5A");
+function updateChrome() {
+  const t = titleOf(playing.sid ?? selId);
+  document.title = (audio.paused ? "" : "▶ ") + t;
+  favLink.href = audio.paused ? FAV_OFF : FAV_ON;
+}
+updateChrome();
 
 /* ---------- settings persistence ---------- */
 const saved = JSON.parse(localStorage.getItem("tn-prefs") || "{}");
@@ -194,14 +221,18 @@ if (saved.voice) $("voice").value = saved.voice;
 if (saved.vol !== undefined) $("vol").value = saved.vol;
 if (saved.follow !== undefined) $("follow").checked = saved.follow;
 if (saved.autoplay !== undefined) $("autoplay").checked = saved.autoplay;
+if (saved.through !== undefined) $("through").checked = saved.through;
 let rate = saved.rate || 1;
 audio.volume = parseFloat($("vol").value);
 function savePrefs() {
   localStorage.setItem("tn-prefs", JSON.stringify({
     voice: $("voice").value, vol: audio.volume, rate,
     follow: $("follow").checked, autoplay: $("autoplay").checked,
+    through: $("through").checked,
   }));
 }
+const seen = JSON.parse(localStorage.getItem("tn-seen") || "{}");
+const saveSeen = () => localStorage.setItem("tn-seen", JSON.stringify(seen));
 
 /* ---------- sessions ---------- */
 function ensure(sid) {
@@ -224,6 +255,15 @@ function renderSessions() {
     b.innerHTML = `<span class="t"></span><span class="m"></span>`;
     b.querySelector(".t").textContent = s.title;
     b.querySelector(".m").textContent = `${when} · ${s.project}`;
+    if (s.id !== selId && s.blocks != null) {
+      const unread = s.blocks - (seen[s.id] ?? s.blocks);
+      if (unread > 0) {
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        badge.textContent = unread;
+        b.appendChild(badge);
+      }
+    }
     b.onclick = () => { $("follow").checked = false; savePrefs(); select(s.id); };
     box.appendChild(b);
   }
@@ -239,6 +279,8 @@ function select(sid) {
   $("empty").style.display = st.blocks.length ? "none" : "";
   main.scrollTop = st.scroll ?? main.scrollHeight;           // restore, or jump to newest
   renderSessions();
+  updateChrome();
+  updateJump();
 }
 
 /* ---------- thought log ---------- */
@@ -316,15 +358,13 @@ function karaokeStep() {
         for (let n = i + 1; n <= k.at; n++) k.spans[n].classList.remove("done", "now");
       }
       if (k.at >= 0) k.spans[k.at].classList.remove("now");
-      if (i >= 0 && k.sid === selId) {
+      if (i >= 0) {
         const s = k.spans[i];
         s.classList.add("now");
-        if (s.offsetTop !== k.lineTop) {
+        if (k.sid === selId && s.offsetTop !== k.lineTop) {
           k.lineTop = s.offsetTop;
           s.scrollIntoView({ block: "center", behavior: "smooth" });
         }
-      } else if (i >= 0) {
-        k.spans[i].classList.add("now");   // hidden session: keep state, no scroll
       }
       k.at = i;
     }
@@ -364,6 +404,14 @@ async function play(sid, idx) {
   audio.playbackRate = rate;
   audio.play().catch(() => setStatus("click ▶ once to allow audio"));
   setStatus(`thought ${idx + 1} of ${st.blocks.length}`);
+  if ("mediaSession" in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: `Thought ${idx + 1} of ${st.blocks.length}`,
+      artist: titleOf(sid), album: "Thinking Narrator",
+    });
+  }
+  if (idx + 1 < st.blocks.length)           // prefetch: synthesize next block now
+    fetch(`/api/timings?session=${sid}&idx=${idx + 1}&voice=${$("voice").value}&rate=10`).catch(() => {});
 }
 
 function pump() {
@@ -373,9 +421,17 @@ function pump() {
   }
 }
 
-audio.onended = () => { lamp.classList.remove("on"); $("pp").textContent = "▶"; pump(); };
-audio.onplay = () => { lamp.classList.add("on"); $("pp").textContent = "⏸"; };
-audio.onpause = () => { lamp.classList.remove("on"); $("pp").textContent = "▶"; };
+audio.onended = () => {
+  lamp.classList.remove("on"); $("pp").textContent = "▶"; updateChrome();
+  if ($("through").checked && playing.sid !== null) {
+    const st = S[playing.sid], nxt = playing.idx + 1;
+    queue = queue.filter(q => !(q.sid === playing.sid && q.idx <= nxt));
+    if (st && nxt < st.blocks.length) { play(playing.sid, nxt); return; }
+  }
+  pump();
+};
+audio.onplay = () => { lamp.classList.add("on"); $("pp").textContent = "⏸"; updateChrome(); };
+audio.onpause = () => { lamp.classList.remove("on"); $("pp").textContent = "▶"; updateChrome(); };
 audio.onerror = () => setStatus("audio failed — offline? edge-tts needs network");
 audio.ontimeupdate = () => {
   if (!seeking && audio.duration) {
@@ -418,6 +474,35 @@ document.querySelectorAll("#speed button").forEach(b =>
   b.classList.toggle("act", parseFloat(b.dataset.r) === rate));
 $("follow").onchange = () => { savePrefs(); if ($("follow").checked) tick(); };
 $("autoplay").onchange = savePrefs;
+$("through").onchange = savePrefs;
+
+/* ---------- keyboard + media keys ---------- */
+document.addEventListener("keydown", e => {
+  if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName)) return;
+  if (e.key === " ") { e.preventDefault(); $("pp").click(); }
+  else if (e.key === "ArrowRight") audio.currentTime += 5;
+  else if (e.key === "ArrowLeft") audio.currentTime = Math.max(0, audio.currentTime - 5);
+  else if (e.key === "j") $("nextB").click();
+  else if (e.key === "k") $("prevB").click();
+  else if (e.key === "m") { audio.muted = !audio.muted; setStatus(audio.muted ? "muted" : "unmuted"); }
+});
+if ("mediaSession" in navigator) {
+  const ms = navigator.mediaSession;
+  ms.setActionHandler("play", () => audio.play());
+  ms.setActionHandler("pause", () => audio.pause());
+  ms.setActionHandler("previoustrack", () => $("prevB").click());
+  ms.setActionHandler("nexttrack", () => $("nextB").click());
+  ms.setActionHandler("seekbackward", () => audio.currentTime = Math.max(0, audio.currentTime - 10));
+  ms.setActionHandler("seekforward", () => audio.currentTime += 10);
+}
+
+/* ---------- jump to newest ---------- */
+function updateJump() {
+  $("jump").style.display =
+    main.scrollTop + main.clientHeight < main.scrollHeight - 200 ? "" : "none";
+}
+main.onscroll = updateJump;
+$("jump").onclick = () => main.scrollTo({ top: main.scrollHeight, behavior: "smooth" });
 
 /* ---------- polling ---------- */
 async function tick() {
@@ -425,7 +510,6 @@ async function tick() {
   inflight = true;
   try {
     sessions = await j("/api/sessions");
-    renderSessions();
     if ($("follow").checked && sessions.length && sessions[0].id !== selId)
       select(sessions[0].id);
     if (selId) {
@@ -450,11 +534,14 @@ async function tick() {
         pump();
       }
       const cur = sessions.find(s => s.id === selId);
+      if (cur && cur.blocks != null) { seen[selId] = cur.blocks; saveSeen(); }
       $("gen").style.display =
         cur && Date.now() / 1000 - cur.mtime < 8 ? "" : "none";
       if (cur && audio.paused && !queue.length && !pendingKey)
         setStatus(`${$("follow").checked ? "following" : "locked"}: ${cur.title}`);
     }
+    renderSessions();
+    updateJump();
     lamp.classList.toggle("pulse", $("follow").checked && $("autoplay").checked && audio.paused);
   } catch (e) {
     setStatus("server unreachable — is server.py running?");

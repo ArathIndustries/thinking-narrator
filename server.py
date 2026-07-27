@@ -22,6 +22,7 @@ import hashlib
 import json
 import os
 import re
+import socket
 import sys
 import tempfile
 import threading
@@ -61,10 +62,44 @@ def scan_sessions():
             ID2PATH[sid] = p
             if p not in TITLES:
                 TITLES[p] = narrate.session_title(p)
+            st = STORE.get(p)
             out.append({"id": sid, "title": TITLES[p],
                         "project": os.path.basename(os.path.dirname(p)),
-                        "mtime": int(os.path.getmtime(p))})
+                        "mtime": int(os.path.getmtime(p)),
+                        "blocks": len(st["blocks"]) if st else None})
     return out
+
+
+def warm_counts():
+    """Background: keep every listed session's block count current so the
+    sidebar can show unread badges without a client-triggered full parse."""
+    while True:
+        try:
+            scan_sessions()
+            with LOCK:
+                paths = list(ID2PATH.values())
+            for p in paths:
+                get_blocks(p)
+        except Exception as e:
+            print(f"[warn] count warmer: {e}", file=sys.stderr)
+        time.sleep(2)
+
+
+def prune_cache():
+    """Background: hourly, evict oldest cache files beyond --cache-mb."""
+    while True:
+        try:
+            files = sorted(((os.path.getmtime(f), f)
+                            for f in glob.glob(os.path.join(CACHE, "*"))),
+                           reverse=True)
+            total = 0
+            for _, f in files:
+                total += os.path.getsize(f)
+                if total > ARGS.cache_mb * 1_000_000:
+                    os.unlink(f)
+        except Exception as e:
+            print(f"[warn] cache prune: {e}", file=sys.stderr)
+        time.sleep(3600)
 
 
 def get_blocks(path):
@@ -206,12 +241,34 @@ def main():
     ap.add_argument("--limit", type=int, default=20, help="sessions listed")
     ap.add_argument("--include-agents", action="store_true")
     ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--cache-mb", type=int, default=200,
+                    help="MP3 cache cap in MB, oldest evicted (default 200)")
     ARGS = ap.parse_args()
 
     os.makedirs(CACHE, exist_ok=True)
-    srv = ThreadingHTTPServer(("127.0.0.1", ARGS.port), Handler)
     url = f"http://127.0.0.1:{ARGS.port}"
+    # Windows: SO_REUSEADDR (set by http.server) lets a second bind succeed on
+    # a live port, so OSError never fires — probe with a connect instead.
+    with socket.socket() as probe:
+        probe.settimeout(0.5)
+        in_use = probe.connect_ex(("127.0.0.1", ARGS.port)) == 0
+    if in_use:
+        print(f"[server] port {ARGS.port} already in use — opening the page "
+              "in your browser instead", flush=True)
+        if not ARGS.no_browser:
+            webbrowser.open(url)
+        return
+    ThreadingHTTPServer.allow_reuse_address = False
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", ARGS.port), Handler)
+    except OSError:
+        print(f"[server] could not bind port {ARGS.port}", flush=True)
+        if not ARGS.no_browser:
+            webbrowser.open(url)
+        return
     print(f"[server] {url}  (root: {ARGS.root})", flush=True)
+    threading.Thread(target=warm_counts, daemon=True).start()
+    threading.Thread(target=prune_cache, daemon=True).start()
     if not ARGS.no_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     try:

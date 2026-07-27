@@ -24,6 +24,26 @@ Three entry points:
   silently; only newly arriving thoughts auto-play. Amber lamp = playing;
   the playing card's left rail fills with progress. Localhost-only bind.
 
+  **Comfort pack (v8):**
+  - **Launch:** double-click the desktop shortcut "Thinking Narrator"
+    (→ `launch.bat`, minimized console). If the server is already running,
+    a second launch just opens the page (connect-probe; Windows
+    SO_REUSEADDR makes bind errors unreliable, found in testing).
+  - **Keys:** space play/pause · ←/→ seek 5 s · j/k next/prev thought ·
+    m mute. Hardware media keys work too (Media Session API), with the
+    session title in the Windows media overlay.
+  - **Play through:** toggle in the footer — after a thought ends, the next
+    one plays automatically; the following block is pre-synthesized while
+    the current one speaks, so there is no gap. Turns history into an
+    audiobook.
+  - **Unread badges:** amber counts on sidebar sessions that gained thoughts
+    since you last viewed them (server keeps counts warm in a background
+    thread; first-seen sessions start at zero).
+  - **Tab state:** ▶ + session title in the tab, amber favicon while
+    speaking.
+  - **↓ newest** floating button appears when scrolled into history.
+  - **Cache cap:** `--cache-mb` (default 200) — oldest MP3s evicted hourly.
+
   **Karaoke tracking:** synthesis requests `boundary="WordBoundary"` from
   edge-tts and stores per-word timestamps beside each MP3 (`/api/timings`).
   While a thought plays, the exact word being spoken is lit amber, read text
