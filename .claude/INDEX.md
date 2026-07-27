@@ -7,3 +7,4 @@ This is a bookmark list, not a log. The actual session content lives in the cent
 ---
 
 - **2026-07-26 — f9fcbe9b** — Project born and built v1→v8 in one session: transcript-flush measurement → SAPI narrator → multi-chat watcher → CLI app with auto-follow/lock → web player with karaoke word tracking → comfort pack (media keys, play-through+prefetch, badges, launcher). Spoke bootstrapped and repo pushed same session. Summary: `sessions/summaries/2026/07/` (lands at /handoff).
+- 2026-07-26 21:01 — Project born and built v1-v8; spoke + repo + LESSONS same session -> [session f9fcbe9b](C:\Users\Arath\OneDrive\Claude Memory\sessions\summaries\2026\07\2026-07-26_Arath_f9fcbe9b.md)
