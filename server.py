@@ -47,6 +47,7 @@ ARGS = None
 STORE = {}        # path -> {"tail": Tail, "blocks": [{idx, ts, text}]}
 ID2PATH = {}
 TITLES = {}
+SYNTH_LOCKS = {}  # cache key -> Lock, so duplicate requests can't race
 LOCK = threading.Lock()
 
 
@@ -95,6 +96,15 @@ def synth(sid, idx, voice, rate):
     key = hashlib.md5(f"wb2|{sid}|{idx}|{voice}|{rate}|{len(text)}".encode()).hexdigest()
     mp3 = os.path.join(CACHE, key + ".mp3")
     tim = os.path.join(CACHE, key + ".json")
+    with LOCK:
+        klock = SYNTH_LOCKS.setdefault(key, threading.Lock())
+    with klock:
+        return _synth_locked(text, voice, rate, mp3, tim)
+
+
+def _synth_locked(text, voice, rate, mp3, tim):
+    """Synthesize under the per-key lock; concurrent requests for the same
+    block wait here and then hit the cache instead of racing on the file."""
     if not (os.path.exists(mp3) and os.path.getsize(mp3) > 0 and os.path.exists(tim)):
         assert HAVE_EDGE, "edge-tts is not installed (py -m pip install edge-tts)"
         r = f"{'+' if rate >= 0 else ''}{rate}%"

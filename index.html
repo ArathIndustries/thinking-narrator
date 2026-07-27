@@ -29,8 +29,9 @@
   .lamp.on { background: var(--amber); box-shadow: 0 0 10px var(--amber); }
   .lamp.pulse { animation: pulse 2.2s ease-in-out infinite; }
   @keyframes pulse { 50% { box-shadow: 0 0 14px var(--amber); } }
+  @keyframes blink { 50% { opacity: .2; } }
   @media (prefers-reduced-motion: reduce) {
-    .lamp.pulse { animation: none; }
+    .lamp.pulse, .card.loading .rail, #gen .dot { animation: none !important; }
     * { scroll-behavior: auto !important; }
   }
   h1 { font: italic 600 17px Georgia, serif; letter-spacing: .02em; }
@@ -64,6 +65,8 @@
   .card.playing .rail {
     background: linear-gradient(to bottom, var(--amber) var(--p, 0%), var(--edge) 0);
   }
+  .card.loading .rail { background: var(--amber); animation: blink 1.1s infinite; }
+  .card.loading .ts::after { content: " · synthesizing…"; color: var(--amber); }
   .card .ts { font: 11.5px Consolas, monospace; color: var(--dim); }
   .card .tx { font: 15.5px/1.65 Georgia, serif; margin-top: 5px;
               white-space: pre-wrap;
@@ -80,6 +83,10 @@
   .tx.karaoke .w.done { color: var(--ink); }
   .tx.karaoke .w.now { background: var(--amber); color: #14100A;
                        border-radius: 3px; padding: 0 2px; margin: 0 -2px; }
+
+  #gen { display: none; color: var(--dim); font: italic 13.5px Georgia, serif;
+         padding: 2px 4px 10px; }
+  #gen .dot { color: var(--amber); animation: blink 1.2s infinite; }
 
   footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
            padding: 10px 16px; border-top: 1px solid var(--edge);
@@ -131,6 +138,7 @@
   <main id="main">
     <div id="empty">No thoughts yet — send a message in any chat and they'll appear here.</div>
     <div id="log"></div>
+    <div id="gen"><span class="dot">●</span> thinking…</div>
   </main>
 </div>
 
@@ -161,11 +169,14 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const audio = new Audio(), lamp = $("lamp"), statusEl = $("status");
+const audio = new Audio(), lamp = $("lamp"), statusEl = $("status"), main = $("main");
 
-let sessions = [], selId = null, selMtime = 0;
-let blocks = [], queue = [], playingIdx = null, inflight = false, seeking = false;
-let k = { idx: null, spans: [], times: [], at: -1, lineTop: -1 };
+const S = {};                 // sid -> {blocks, el, scroll, everLoaded}
+let sessions = [], selId = null;
+let playing = { sid: null, idx: null };
+let queue = [];               // [{sid, idx}]
+let pendingKey = null, playToken = 0, inflight = false, seeking = false;
+let k = { sid: null, idx: null, spans: [], times: [], at: -1, lineTop: -1 };
 
 const j = async url => {
   const r = await fetch(url);
@@ -175,6 +186,7 @@ const j = async url => {
 };
 const setStatus = t => statusEl.textContent = t;
 const fmt = s => isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "0:00";
+const cardEl = (sid, idx) => $(`blk-${sid}-${idx}`);
 
 /* ---------- settings persistence ---------- */
 const saved = JSON.parse(localStorage.getItem("tn-prefs") || "{}");
@@ -192,6 +204,16 @@ function savePrefs() {
 }
 
 /* ---------- sessions ---------- */
+function ensure(sid) {
+  if (!S[sid]) {
+    const el = document.createElement("div");
+    el.style.display = "none";
+    $("log").appendChild(el);
+    S[sid] = { blocks: [], el, scroll: null, everLoaded: false };
+  }
+  return S[sid];
+}
+
 function renderSessions() {
   const box = $("sessions");
   box.innerHTML = "";
@@ -202,27 +224,27 @@ function renderSessions() {
     b.innerHTML = `<span class="t"></span><span class="m"></span>`;
     b.querySelector(".t").textContent = s.title;
     b.querySelector(".m").textContent = `${when} · ${s.project}`;
-    b.onclick = () => { $("follow").checked = false; savePrefs(); select(s); };
+    b.onclick = () => { $("follow").checked = false; savePrefs(); select(s.id); };
     box.appendChild(b);
   }
 }
 
-function select(s) {
-  if (s.id === selId) return;
-  selId = s.id; selMtime = s.mtime;
-  blocks = []; queue = []; playingIdx = null;
-  k = { idx: null, spans: [], times: [], at: -1, lineTop: -1 };
-  $("log").innerHTML = "";
-  $("empty").style.display = "";
-  setStatus(`loading: ${s.title}`);
+function select(sid) {
+  if (sid === selId) return;
+  if (selId && S[selId]) S[selId].scroll = main.scrollTop;   // remember where you were
+  selId = sid;
+  const st = ensure(sid);
+  for (const id in S) S[id].el.style.display = id === sid ? "" : "none";
+  queue = queue.filter(q => q.sid === sid);                  // stale auto-play drops
+  $("empty").style.display = st.blocks.length ? "none" : "";
+  main.scrollTop = st.scroll ?? main.scrollHeight;           // restore, or jump to newest
   renderSessions();
 }
 
 /* ---------- thought log ---------- */
-function addCard(b) {
-  $("empty").style.display = "none";
+function addCard(sid, b) {
   const card = document.createElement("div");
-  card.className = "card"; card.id = "blk" + b.idx;
+  card.className = "card"; card.id = `blk-${sid}-${b.idx}`;
   card.innerHTML = `<div class="rail"></div><div class="ts"></div><div class="tx"></div><button class="more">expand</button>`;
   card.querySelector(".ts").textContent = (b.ts || "").slice(11, 19) || "—";
   card.querySelector(".tx").textContent = b.text;
@@ -231,26 +253,26 @@ function addCard(b) {
     card.classList.toggle("open");
     e.target.textContent = card.classList.contains("open") ? "collapse" : "expand";
   };
-  card.onclick = () => play(b.idx);
-  $("log").appendChild(card);
+  card.onclick = () => play(sid, b.idx);
+  S[sid].el.appendChild(card);
 }
 
 /* ---------- karaoke ---------- */
 function clearKaraoke() {
-  if (k.idx === null) return;
-  const old = $("blk" + k.idx);
-  if (old) {
+  if (k.sid === null) return;
+  const old = cardEl(k.sid, k.idx);
+  if (old && S[k.sid]) {
     const tx = old.querySelector(".tx");
     tx.classList.remove("karaoke");
-    tx.textContent = blocks[k.idx].text;
+    tx.textContent = S[k.sid].blocks[k.idx].text;
   }
-  k = { idx: null, spans: [], times: [], at: -1, lineTop: -1 };
+  k = { sid: null, idx: null, spans: [], times: [], at: -1, lineTop: -1 };
 }
 
-function setupKaraoke(idx, timings) {
+function setupKaraoke(sid, idx, timings) {
   clearKaraoke();
-  const card = $("blk" + idx), text = blocks[idx].text;
-  if (!card || !timings.length) { k.idx = idx; return; }
+  const card = cardEl(sid, idx), text = S[sid].blocks[idx].text;
+  if (!card || !timings.length) { k.sid = sid; k.idx = idx; return; }
   const tx = card.querySelector(".tx");
   const frag = document.createDocumentFragment();
   const spans = [], times = [];
@@ -270,7 +292,7 @@ function setupKaraoke(idx, timings) {
   tx.innerHTML = ""; tx.appendChild(frag); tx.classList.add("karaoke");
   card.classList.add("open");
   card.querySelector(".more").textContent = "collapse";
-  k = { idx, spans, times, at: -1, lineTop: -1 };
+  k = { sid, idx, spans, times, at: -1, lineTop: -1 };
 }
 
 function karaokeStep() {
@@ -288,13 +310,15 @@ function karaokeStep() {
         for (let n = i + 1; n <= k.at; n++) k.spans[n].classList.remove("done", "now");
       }
       if (k.at >= 0) k.spans[k.at].classList.remove("now");
-      if (i >= 0) {
+      if (i >= 0 && k.sid === selId) {
         const s = k.spans[i];
         s.classList.add("now");
         if (s.offsetTop !== k.lineTop) {
           k.lineTop = s.offsetTop;
           s.scrollIntoView({ block: "center", behavior: "smooth" });
         }
+      } else if (i >= 0) {
+        k.spans[i].classList.add("now");   // hidden session: keep state, no scroll
       }
       k.at = i;
     }
@@ -304,25 +328,43 @@ function karaokeStep() {
 requestAnimationFrame(karaokeStep);
 
 /* ---------- playback ---------- */
-async function play(idx) {
-  if (idx < 0 || idx >= blocks.length || selId === null) return;
-  playingIdx = idx;
-  document.querySelectorAll(".card.playing").forEach(c => c.classList.remove("playing"));
-  const card = $("blk" + idx);
-  if (card) card.classList.add("playing");
-  const qs = `session=${selId}&idx=${idx}&voice=${$("voice").value}&rate=10`;
+async function play(sid, idx) {
+  const st = S[sid];
+  if (!st || idx < 0 || idx >= st.blocks.length) return;
+  const key = `${sid}:${idx}`;
+  if (pendingKey === key) return;           // this block is already synthesizing
+  const my = ++playToken;
+  pendingKey = key;
+  const card = cardEl(sid, idx);
+  card?.classList.add("loading");
+  setStatus(`synthesizing thought ${idx + 1}…`);
+  const qs = `session=${sid}&idx=${idx}&voice=${$("voice").value}&rate=10`;
   let timings = [];
-  try { timings = await j(`/api/timings?${qs}`); }
-  catch (e) { setStatus(`synthesis failed — ${e.message}`); return; }
-  setupKaraoke(idx, timings);
+  try {
+    timings = await j(`/api/timings?${qs}`);
+  } catch (e) {
+    setStatus(`synthesis failed — ${e.message}`);
+    return;
+  } finally {
+    card?.classList.remove("loading");
+    if (pendingKey === key) pendingKey = null;
+  }
+  if (my !== playToken) return;             // a newer click superseded this one
+  playing = { sid, idx };
+  document.querySelectorAll(".card.playing").forEach(c => c.classList.remove("playing"));
+  card?.classList.add("playing");
+  setupKaraoke(sid, idx, timings);
   audio.src = `/api/audio?${qs}`;
   audio.playbackRate = rate;
   audio.play().catch(() => setStatus("click ▶ once to allow audio"));
-  setStatus(`thought ${idx + 1} of ${blocks.length}`);
+  setStatus(`thought ${idx + 1} of ${st.blocks.length}`);
 }
 
 function pump() {
-  if ((audio.paused || audio.ended) && queue.length) play(queue.shift());
+  if ((audio.paused || audio.ended) && !pendingKey && queue.length) {
+    const n = queue.shift();
+    play(n.sid, n.idx);
+  }
 }
 
 audio.onended = () => { lamp.classList.remove("on"); $("pp").textContent = "▶"; pump(); };
@@ -334,7 +376,7 @@ audio.ontimeupdate = () => {
     $("seek").value = Math.round(audio.currentTime / audio.duration * 1000);
     $("time").textContent = `${fmt(audio.currentTime)} / ${fmt(audio.duration)}`;
   }
-  const card = $("blk" + playingIdx);
+  const card = playing.sid !== null ? cardEl(playing.sid, playing.idx) : null;
   if (card && audio.duration)
     card.querySelector(".rail").style.setProperty("--p", (audio.currentTime / audio.duration * 100) + "%");
 };
@@ -342,12 +384,15 @@ audio.ontimeupdate = () => {
 $("pp").onclick = () => {
   if (audio.paused) {
     if (audio.src) audio.play();
-    else if (blocks.length) play(blocks.length - 1);
+    else if (selId && S[selId]?.blocks.length) play(selId, S[selId].blocks.length - 1);
   } else audio.pause();
 };
 $("back").onclick = () => { audio.currentTime = Math.max(0, audio.currentTime - 10); };
-$("prevB").onclick = () => play((playingIdx ?? 1) - 1);
-$("nextB").onclick = () => play((playingIdx ?? -1) + 1);
+$("prevB").onclick = () => { if (playing.sid !== null) play(playing.sid, playing.idx - 1); };
+$("nextB").onclick = () => {
+  if (playing.sid !== null) play(playing.sid, playing.idx + 1);
+  else if (selId && S[selId]?.blocks.length) play(selId, S[selId].blocks.length - 1);
+};
 $("seek").onpointerdown = () => seeking = true;
 $("seek").onpointerup = () => seeking = false;
 $("seek").oninput = () => {
@@ -376,23 +421,32 @@ async function tick() {
     sessions = await j("/api/sessions");
     renderSessions();
     if ($("follow").checked && sessions.length && sessions[0].id !== selId)
-      select(sessions[0]);
+      select(sessions[0].id);
     if (selId) {
-      const fresh = await j(`/api/blocks?session=${selId}&after=${blocks.length}`);
+      const st = ensure(selId);
+      const fresh = await j(`/api/blocks?session=${selId}&after=${st.blocks.length}`);
       if (fresh.length) {
-        const firstLoad = blocks.length === 0;
-        for (const b of fresh) { blocks.push(b); addCard(b); }
+        const firstLoad = !st.everLoaded;
+        const pinned = main.scrollTop + main.clientHeight >= main.scrollHeight - 90;
+        for (const b of fresh) { st.blocks.push(b); addCard(selId, b); }
+        st.everLoaded = true;
+        $("empty").style.display = "none";
+        if (firstLoad || pinned) main.scrollTop = main.scrollHeight;
         if ($("autoplay").checked) {
+          const cur = sessions.find(s => s.id === selId);
           if (firstLoad) {
-            if (Date.now() / 1000 - selMtime < 30) queue.push(blocks.length - 1);
+            if (cur && Date.now() / 1000 - cur.mtime < 30)
+              queue.push({ sid: selId, idx: st.blocks.length - 1 });
           } else {
-            for (const b of fresh) queue.push(b.idx);
+            for (const b of fresh) queue.push({ sid: selId, idx: b.idx });
           }
         }
         pump();
       }
       const cur = sessions.find(s => s.id === selId);
-      if (cur && audio.paused && !queue.length)
+      $("gen").style.display =
+        cur && Date.now() / 1000 - cur.mtime < 8 ? "" : "none";
+      if (cur && audio.paused && !queue.length && !pendingKey)
         setStatus(`${$("follow").checked ? "following" : "locked"}: ${cur.title}`);
     }
     lamp.classList.toggle("pulse", $("follow").checked && $("autoplay").checked && audio.paused);
