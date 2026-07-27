@@ -6,8 +6,8 @@
 <title>Thinking Narrator</title>
 <style>
   :root {
-    --bg: #17181C; --surface: #1F2127; --edge: #2A2D35;
-    --ink: #E8E4DA; --dim: #8A8FA0; --amber: #E8A33C;
+    --bg: #0B0C0F; --surface: #13151A; --raise: #191C22; --edge: #23262E;
+    --ink: #E6E2D8; --dim: #7C8090; --faint: #4A4E5A; --amber: #E8A33C;
   }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; }
@@ -16,34 +16,36 @@
     font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
     display: grid; grid-template-rows: auto 1fr auto; height: 100vh;
   }
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--edge); border-radius: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
 
   header {
     display: flex; align-items: center; gap: 12px;
     padding: 10px 18px; border-bottom: 1px solid var(--edge);
   }
-  .lamp {
-    width: 10px; height: 10px; border-radius: 50%;
-    background: #3A3D46; flex: none; transition: background .3s;
-  }
+  .lamp { width: 10px; height: 10px; border-radius: 50%;
+          background: #2C2F37; flex: none; transition: background .3s; }
   .lamp.on { background: var(--amber); box-shadow: 0 0 10px var(--amber); }
   .lamp.pulse { animation: pulse 2.2s ease-in-out infinite; }
   @keyframes pulse { 50% { box-shadow: 0 0 14px var(--amber); } }
-  @media (prefers-reduced-motion: reduce) { .lamp.pulse { animation: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .lamp.pulse { animation: none; }
+    * { scroll-behavior: auto !important; }
+  }
   h1 { font: italic 600 17px Georgia, serif; letter-spacing: .02em; }
   #status { margin-left: auto; color: var(--dim); font-size: 12.5px;
             font-family: Consolas, monospace; text-align: right; }
 
-  .body { display: grid; grid-template-columns: 264px 1fr; min-height: 0; }
+  .body { display: grid; grid-template-columns: 250px 1fr; min-height: 0; }
   @media (max-width: 760px) { .body { grid-template-columns: 1fr; } aside { display: none; } }
 
   aside { border-right: 1px solid var(--edge); overflow-y: auto; padding: 8px; }
   aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .1em;
              color: var(--dim); padding: 6px 8px; }
-  .sess {
-    width: 100%; text-align: left; background: none; border: 0; color: var(--ink);
-    padding: 8px 10px; border-radius: 6px; cursor: pointer; font: inherit;
-    display: block;
-  }
+  .sess { width: 100%; text-align: left; background: none; border: 0;
+          color: var(--ink); padding: 8px 10px; border-radius: 6px;
+          cursor: pointer; font: inherit; display: block; }
   .sess:hover { background: var(--surface); }
   .sess.sel { background: var(--surface); box-shadow: inset 2px 0 0 var(--amber); }
   .sess .t { display: block; white-space: nowrap; overflow: hidden;
@@ -51,50 +53,66 @@
   .sess .m { display: block; color: var(--dim); font-size: 11.5px;
              font-family: Consolas, monospace; }
 
-  main { overflow-y: auto; padding: 16px 22px 26px; min-height: 0; }
+  main { overflow-y: auto; padding: 16px 26px 30px; min-height: 0; }
   #empty { color: var(--dim); padding: 40px 0; text-align: center;
            font: italic 15px Georgia, serif; }
-  .card {
-    position: relative; background: var(--surface); border: 1px solid var(--edge);
-    border-radius: 8px; padding: 12px 16px 12px 20px; margin: 0 auto 12px;
-    max-width: 72ch; cursor: pointer;
-  }
-  .card .rail {
-    position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
-    border-radius: 8px 0 0 8px; background: var(--edge);
-  }
+  .card { position: relative; background: var(--surface);
+          border: 1px solid var(--edge); border-radius: 8px;
+          padding: 12px 20px 12px 22px; margin: 0 0 12px; cursor: pointer; }
+  .card .rail { position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+                border-radius: 8px 0 0 8px; background: var(--edge); }
   .card.playing .rail {
     background: linear-gradient(to bottom, var(--amber) var(--p, 0%), var(--edge) 0);
   }
   .card .ts { font: 11.5px Consolas, monospace; color: var(--dim); }
-  .card .tx {
-    font: 15px/1.6 Georgia, serif; margin-top: 4px; white-space: pre-wrap;
-    display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
+  .card .tx { font: 15.5px/1.65 Georgia, serif; margin-top: 5px;
+              white-space: pre-wrap;
+              display: -webkit-box; -webkit-line-clamp: 5;
+              -webkit-box-orient: vertical; overflow: hidden; }
   .card.open .tx { display: block; }
   .card .more { background: none; border: 0; color: var(--dim); cursor: pointer;
                 font: 11.5px Consolas, monospace; padding: 4px 0 0; }
   .card .more:hover { color: var(--ink); }
   .card.playing { border-color: #4A4335; }
 
-  footer {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
-    padding: 10px 18px; border-top: 1px solid var(--edge); background: var(--surface);
-  }
-  footer button {
-    background: var(--bg); color: var(--ink); border: 1px solid var(--edge);
-    border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit;
-  }
-  footer button:hover { border-color: var(--dim); }
-  audio { height: 34px; flex: 1 1 260px; min-width: 220px; }
+  /* karaoke: unread dim, read bright, current word lit */
+  .tx.karaoke { color: var(--faint); }
+  .tx.karaoke .w.done { color: var(--ink); }
+  .tx.karaoke .w.now { background: var(--amber); color: #14100A;
+                       border-radius: 3px; padding: 0 2px; margin: 0 -2px; }
+
+  footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+           padding: 10px 16px; border-top: 1px solid var(--edge);
+           background: var(--surface); }
+  footer .btn { background: var(--raise); color: var(--ink);
+                border: 1px solid var(--edge); border-radius: 6px;
+                padding: 6px 11px; cursor: pointer; font: 13px Consolas, monospace; }
+  footer .btn:hover { border-color: var(--amber); }
+  #pp { width: 44px; font-size: 14px; }
+  #time { font: 12px Consolas, monospace; color: var(--dim);
+          min-width: 86px; text-align: center; }
+  input[type=range] { -webkit-appearance: none; appearance: none; height: 4px;
+                      background: var(--edge); border-radius: 2px; cursor: pointer; }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 12px; height: 12px;
+    border-radius: 50%; background: var(--amber); border: 0; }
+  #seek { flex: 1 1 180px; min-width: 140px; }
+  .vol { display: flex; align-items: center; gap: 6px; color: var(--dim);
+         font-size: 12px; }
+  #vol { width: 80px; }
+  select { background: var(--raise); color: var(--ink);
+           border: 1px solid var(--edge); border-radius: 6px;
+           padding: 6px 8px; font: inherit; }
+  select option { background: var(--raise); color: var(--ink); }
+  .segs { display: flex; border: 1px solid var(--edge); border-radius: 6px;
+          overflow: hidden; }
+  .segs button { background: var(--raise); color: var(--dim); border: 0;
+                 padding: 6px 9px; cursor: pointer; font: 12px Consolas, monospace; }
+  .segs button + button { border-left: 1px solid var(--edge); }
+  .segs button.act { background: var(--amber); color: #14100A; }
   label.tog { display: flex; align-items: center; gap: 6px; color: var(--dim);
               cursor: pointer; user-select: none; }
   label.tog input { accent-color: var(--amber); }
-  select {
-    background: var(--bg); color: var(--ink); border: 1px solid var(--edge);
-    border-radius: 6px; padding: 5px 8px; font: inherit;
-  }
   :focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
 </style>
 </head>
@@ -117,11 +135,13 @@
 </div>
 
 <footer>
-  <button id="prev" title="Previous thought">⏮</button>
-  <button id="next" title="Next thought">⏭</button>
-  <audio id="audio" controls></audio>
-  <label class="tog"><input type="checkbox" id="follow" checked> Follow active chat</label>
-  <label class="tog"><input type="checkbox" id="autoplay" checked> Read new thoughts</label>
+  <button class="btn" id="prevB" title="Previous thought">⏮</button>
+  <button class="btn" id="pp" title="Play / pause">▶</button>
+  <button class="btn" id="back" title="Back 10 seconds">−10s</button>
+  <button class="btn" id="nextB" title="Next thought">⏭</button>
+  <span id="time">0:00 / 0:00</span>
+  <input type="range" id="seek" min="0" max="1000" value="0">
+  <span class="vol">vol <input type="range" id="vol" min="0" max="1" step="0.01" value="1"></span>
   <select id="voice" title="Voice">
     <option value="en-US-ChristopherNeural">Christopher (US, calm)</option>
     <option value="en-US-EricNeural">Eric (US, mellow)</option>
@@ -132,21 +152,20 @@
     <option value="en-GB-RyanNeural">Ryan (UK)</option>
     <option value="en-GB-SoniaNeural">Sonia (UK)</option>
   </select>
-  <select id="speed" title="Speed">
-    <option value="0.75">0.75×</option>
-    <option value="1" selected>1×</option>
-    <option value="1.25">1.25×</option>
-    <option value="1.5">1.5×</option>
-    <option value="2">2×</option>
-  </select>
+  <span class="segs" id="speed" title="Speed">
+    <button data-r="0.75">.75×</button><button data-r="1" class="act">1×</button><button data-r="1.25">1.25×</button><button data-r="1.5">1.5×</button><button data-r="2">2×</button>
+  </span>
+  <label class="tog"><input type="checkbox" id="follow" checked> Follow active chat</label>
+  <label class="tog"><input type="checkbox" id="autoplay" checked> Read new thoughts</label>
 </footer>
 
 <script>
 const $ = id => document.getElementById(id);
-const audio = $("audio"), lamp = $("lamp"), statusEl = $("status");
+const audio = new Audio(), lamp = $("lamp"), statusEl = $("status");
 
 let sessions = [], selId = null, selMtime = 0;
-let blocks = [], queue = [], playingIdx = null, inflight = false;
+let blocks = [], queue = [], playingIdx = null, inflight = false, seeking = false;
+let k = { idx: null, spans: [], times: [], at: -1, lineTop: -1 };
 
 const j = async url => {
   const r = await fetch(url);
@@ -155,7 +174,24 @@ const j = async url => {
   return d;
 };
 const setStatus = t => statusEl.textContent = t;
+const fmt = s => isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "0:00";
 
+/* ---------- settings persistence ---------- */
+const saved = JSON.parse(localStorage.getItem("tn-prefs") || "{}");
+if (saved.voice) $("voice").value = saved.voice;
+if (saved.vol !== undefined) $("vol").value = saved.vol;
+if (saved.follow !== undefined) $("follow").checked = saved.follow;
+if (saved.autoplay !== undefined) $("autoplay").checked = saved.autoplay;
+let rate = saved.rate || 1;
+audio.volume = parseFloat($("vol").value);
+function savePrefs() {
+  localStorage.setItem("tn-prefs", JSON.stringify({
+    voice: $("voice").value, vol: audio.volume, rate,
+    follow: $("follow").checked, autoplay: $("autoplay").checked,
+  }));
+}
+
+/* ---------- sessions ---------- */
 function renderSessions() {
   const box = $("sessions");
   box.innerHTML = "";
@@ -166,7 +202,7 @@ function renderSessions() {
     b.innerHTML = `<span class="t"></span><span class="m"></span>`;
     b.querySelector(".t").textContent = s.title;
     b.querySelector(".m").textContent = `${when} · ${s.project}`;
-    b.onclick = () => { $("follow").checked = false; select(s); };
+    b.onclick = () => { $("follow").checked = false; savePrefs(); select(s); };
     box.appendChild(b);
   }
 }
@@ -175,12 +211,14 @@ function select(s) {
   if (s.id === selId) return;
   selId = s.id; selMtime = s.mtime;
   blocks = []; queue = []; playingIdx = null;
+  k = { idx: null, spans: [], times: [], at: -1, lineTop: -1 };
   $("log").innerHTML = "";
   $("empty").style.display = "";
   setStatus(`loading: ${s.title}`);
   renderSessions();
 }
 
+/* ---------- thought log ---------- */
 function addCard(b) {
   $("empty").style.display = "none";
   const card = document.createElement("div");
@@ -197,37 +235,140 @@ function addCard(b) {
   $("log").appendChild(card);
 }
 
-function play(idx) {
-  if (idx < 0 || idx >= blocks.length) return;
+/* ---------- karaoke ---------- */
+function clearKaraoke() {
+  if (k.idx === null) return;
+  const old = $("blk" + k.idx);
+  if (old) {
+    const tx = old.querySelector(".tx");
+    tx.classList.remove("karaoke");
+    tx.textContent = blocks[k.idx].text;
+  }
+  k = { idx: null, spans: [], times: [], at: -1, lineTop: -1 };
+}
+
+function setupKaraoke(idx, timings) {
+  clearKaraoke();
+  const card = $("blk" + idx), text = blocks[idx].text;
+  if (!card || !timings.length) { k.idx = idx; return; }
+  const tx = card.querySelector(".tx");
+  const frag = document.createDocumentFragment();
+  const spans = [], times = [];
+  let cur = 0, prev = null;
+  for (const { t, w } of timings) {
+    const i = text.indexOf(w, cur);
+    if (i < 0) continue;                      // TTS normalized this token; skip
+    const gap = text.slice(cur, i);
+    if (gap) (prev || frag).appendChild(document.createTextNode(gap));
+    const s = document.createElement("span");
+    s.className = "w"; s.textContent = text.slice(i, i + w.length);
+    frag.appendChild(s); spans.push(s); times.push(t);
+    prev = s; cur = i + w.length;
+  }
+  const rest = text.slice(cur);
+  if (rest) (prev || frag).appendChild(document.createTextNode(rest));
+  tx.innerHTML = ""; tx.appendChild(frag); tx.classList.add("karaoke");
+  card.classList.add("open");
+  card.querySelector(".more").textContent = "collapse";
+  k = { idx, spans, times, at: -1, lineTop: -1 };
+}
+
+function karaokeStep() {
+  if (k.times.length && !audio.paused) {
+    const t = audio.currentTime;
+    let lo = 0, hi = k.times.length - 1, i = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (k.times[mid] <= t) { i = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    if (i !== k.at) {
+      if (i > k.at) {
+        for (let n = Math.max(k.at, 0); n <= i; n++) k.spans[n].classList.add("done");
+      } else {
+        for (let n = i + 1; n <= k.at; n++) k.spans[n].classList.remove("done", "now");
+      }
+      if (k.at >= 0) k.spans[k.at].classList.remove("now");
+      if (i >= 0) {
+        const s = k.spans[i];
+        s.classList.add("now");
+        if (s.offsetTop !== k.lineTop) {
+          k.lineTop = s.offsetTop;
+          s.scrollIntoView({ block: "center", behavior: "smooth" });
+        }
+      }
+      k.at = i;
+    }
+  }
+  requestAnimationFrame(karaokeStep);
+}
+requestAnimationFrame(karaokeStep);
+
+/* ---------- playback ---------- */
+async function play(idx) {
+  if (idx < 0 || idx >= blocks.length || selId === null) return;
   playingIdx = idx;
   document.querySelectorAll(".card.playing").forEach(c => c.classList.remove("playing"));
   const card = $("blk" + idx);
-  if (card) { card.classList.add("playing"); card.scrollIntoView({block: "nearest", behavior: "smooth"}); }
-  audio.src = `/api/audio?session=${selId}&idx=${idx}&voice=${$("voice").value}&rate=10`;
-  audio.playbackRate = parseFloat($("speed").value);
+  if (card) card.classList.add("playing");
+  const qs = `session=${selId}&idx=${idx}&voice=${$("voice").value}&rate=10`;
+  let timings = [];
+  try { timings = await j(`/api/timings?${qs}`); }
+  catch (e) { setStatus(`synthesis failed — ${e.message}`); return; }
+  setupKaraoke(idx, timings);
+  audio.src = `/api/audio?${qs}`;
+  audio.playbackRate = rate;
   audio.play().catch(() => setStatus("click ▶ once to allow audio"));
-  setStatus(`playing thought ${idx + 1} of ${blocks.length}`);
+  setStatus(`thought ${idx + 1} of ${blocks.length}`);
 }
 
 function pump() {
-  if ((audio.paused || audio.ended) && !audio.seeking && queue.length)
-    play(queue.shift());
+  if ((audio.paused || audio.ended) && queue.length) play(queue.shift());
 }
 
-audio.onended = () => { lamp.classList.remove("on"); pump(); };
-audio.onplay = () => lamp.classList.add("on");
-audio.onpause = () => lamp.classList.remove("on");
+audio.onended = () => { lamp.classList.remove("on"); $("pp").textContent = "▶"; pump(); };
+audio.onplay = () => { lamp.classList.add("on"); $("pp").textContent = "⏸"; };
+audio.onpause = () => { lamp.classList.remove("on"); $("pp").textContent = "▶"; };
+audio.onerror = () => setStatus("audio failed — offline? edge-tts needs network");
 audio.ontimeupdate = () => {
+  if (!seeking && audio.duration) {
+    $("seek").value = Math.round(audio.currentTime / audio.duration * 1000);
+    $("time").textContent = `${fmt(audio.currentTime)} / ${fmt(audio.duration)}`;
+  }
   const card = $("blk" + playingIdx);
   if (card && audio.duration)
     card.querySelector(".rail").style.setProperty("--p", (audio.currentTime / audio.duration * 100) + "%");
 };
-audio.onerror = () => setStatus("audio failed — offline? edge-tts needs network");
-$("speed").onchange = () => audio.playbackRate = parseFloat($("speed").value);
-$("prev").onclick = () => play((playingIdx ?? 1) - 1);
-$("next").onclick = () => play((playingIdx ?? -1) + 1);
-$("follow").onchange = () => { if ($("follow").checked) tick(); };
 
+$("pp").onclick = () => {
+  if (audio.paused) {
+    if (audio.src) audio.play();
+    else if (blocks.length) play(blocks.length - 1);
+  } else audio.pause();
+};
+$("back").onclick = () => { audio.currentTime = Math.max(0, audio.currentTime - 10); };
+$("prevB").onclick = () => play((playingIdx ?? 1) - 1);
+$("nextB").onclick = () => play((playingIdx ?? -1) + 1);
+$("seek").onpointerdown = () => seeking = true;
+$("seek").onpointerup = () => seeking = false;
+$("seek").oninput = () => {
+  if (audio.duration) audio.currentTime = $("seek").value / 1000 * audio.duration;
+};
+$("vol").oninput = () => { audio.volume = parseFloat($("vol").value); savePrefs(); };
+$("voice").onchange = savePrefs;
+$("speed").onclick = e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  rate = parseFloat(b.dataset.r);
+  audio.playbackRate = rate;
+  document.querySelectorAll("#speed button").forEach(x => x.classList.toggle("act", x === b));
+  savePrefs();
+};
+document.querySelectorAll("#speed button").forEach(b =>
+  b.classList.toggle("act", parseFloat(b.dataset.r) === rate));
+$("follow").onchange = () => { savePrefs(); if ($("follow").checked) tick(); };
+$("autoplay").onchange = savePrefs;
+
+/* ---------- polling ---------- */
 async function tick() {
   if (inflight) return;
   inflight = true;
@@ -243,7 +384,6 @@ async function tick() {
         for (const b of fresh) { blocks.push(b); addCard(b); }
         if ($("autoplay").checked) {
           if (firstLoad) {
-            // history loads silently; speak only the block that just arrived
             if (Date.now() / 1000 - selMtime < 30) queue.push(blocks.length - 1);
           } else {
             for (const b of fresh) queue.push(b.idx);

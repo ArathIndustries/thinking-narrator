@@ -78,7 +78,12 @@ def get_blocks(path):
         return list(st["blocks"])
 
 
-def get_audio(sid, idx, voice, rate):
+def synth(sid, idx, voice, rate):
+    """Synthesize one block; returns (mp3_path, timings_path).
+
+    Timings = [{"t": seconds, "w": word}] from edge-tts WordBoundary events,
+    cached beside the mp3.
+    """
     path = ID2PATH.get(sid)
     if path is None:
         scan_sessions()
@@ -87,16 +92,28 @@ def get_audio(sid, idx, voice, rate):
     blocks = get_blocks(path)
     assert 0 <= idx < len(blocks), f"block {idx} out of range (have {len(blocks)})"
     text = narrate.clean(blocks[idx]["text"], 0)
-    key = hashlib.md5(f"{sid}|{idx}|{voice}|{rate}|{len(text)}".encode()).hexdigest()
+    key = hashlib.md5(f"wb2|{sid}|{idx}|{voice}|{rate}|{len(text)}".encode()).hexdigest()
     mp3 = os.path.join(CACHE, key + ".mp3")
-    if not (os.path.exists(mp3) and os.path.getsize(mp3) > 0):
+    tim = os.path.join(CACHE, key + ".json")
+    if not (os.path.exists(mp3) and os.path.getsize(mp3) > 0 and os.path.exists(tim)):
         assert HAVE_EDGE, "edge-tts is not installed (py -m pip install edge-tts)"
         r = f"{'+' if rate >= 0 else ''}{rate}%"
+        words = []
         async def go():
-            await edge_tts.Communicate(text, voice, rate=r).save(mp3)
+            com = edge_tts.Communicate(text, voice, rate=r,
+                                       boundary="WordBoundary")
+            with open(mp3, "wb") as f:
+                async for ch in com.stream():
+                    if ch["type"] == "audio":
+                        f.write(ch["data"])
+                    elif ch["type"] == "WordBoundary":
+                        words.append({"t": round(ch["offset"] / 1e7, 3),
+                                      "w": ch["text"]})
         asyncio.run(go())
         assert os.path.getsize(mp3) > 0, "edge-tts produced empty audio"
-    return mp3
+        with open(tim, "w", encoding="utf-8") as f:
+            json.dump(words, f)
+    return mp3, tim
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -153,10 +170,15 @@ class Handler(BaseHTTPRequestHandler):
                 after = int(q.get("after", 0))
                 self.send_json(get_blocks(path)[after:])
             elif u.path == "/api/audio":
-                mp3 = get_audio(q["session"], int(q["idx"]),
-                                q.get("voice", DEFAULT_VOICE),
-                                int(q.get("rate", 10)))
+                mp3, _ = synth(q["session"], int(q["idx"]),
+                               q.get("voice", DEFAULT_VOICE),
+                               int(q.get("rate", 10)))
                 self.send_file(mp3, "audio/mpeg")
+            elif u.path == "/api/timings":
+                _, tim = synth(q["session"], int(q["idx"]),
+                               q.get("voice", DEFAULT_VOICE),
+                               int(q.get("rate", 10)))
+                self.send_file(tim, "application/json; charset=utf-8")
             else:
                 self.send_json({"error": "not found"}, 404)
         except Exception as e:

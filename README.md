@@ -24,6 +24,16 @@ Three entry points:
   silently; only newly arriving thoughts auto-play. Amber lamp = playing;
   the playing card's left rail fills with progress. Localhost-only bind.
 
+  **Karaoke tracking:** synthesis requests `boundary="WordBoundary"` from
+  edge-tts and stores per-word timestamps beside each MP3 (`/api/timings`).
+  While a thought plays, the exact word being spoken is lit amber, read text
+  is bright, unread text is dimmed, and the view auto-scrolls teleprompter-
+  style (respects reduced-motion). Seeking/speed changes stay in sync since
+  timings are in media time. Words the TTS normalizes (e.g. digits read as
+  words) are skipped by the aligner — the highlight just steps over them.
+  Custom player bar: play/pause, −10 s, prev/next thought, seek, volume,
+  voice, segmented speed — settings persist in localStorage.
+
 - **`app.py`** — the app. Bare launch auto-follows whichever chat is
   currently generating and switches with you between chats; lock it to one
   chat (at launch or at runtime) when you want it pinned. One narrated chat
