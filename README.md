@@ -1,7 +1,28 @@
 # thinking-narrator
 
 Speaks Claude Code `thinking` blocks aloud, near-live or as history replay.
-Two entry points:
+Three entry points:
+
+- **`server.py`** — the web player (recommended). `py server.py` opens
+  http://127.0.0.1:8917 — session sidebar, scrollable thought log, and a
+  real audio player. This is where the intuitive controls live:
+
+  | want | how |
+  |---|---|
+  | pause / resume mid-thought | player pause button |
+  | rewind / scrub inside a thought | drag the seek bar (Range-request backed) |
+  | replay any past thought | click its card in the log |
+  | volume | player volume slider |
+  | change voice | voice dropdown (applies to the next thought) |
+  | speed | speed dropdown (instant, browser playbackRate) |
+  | follow the chat I'm in | "Follow active chat" toggle (auto-switches) |
+  | lock to one chat | click it in the sidebar (turns follow off) |
+  | stop auto-reading, browse quietly | untick "Read new thoughts" |
+
+  MP3s are synthesized per block (edge-tts) and cached in
+  `%TEMP%\thinking-narrator-cache`, so replays are instant. History loads
+  silently; only newly arriving thoughts auto-play. Amber lamp = playing;
+  the playing card's left rail fills with progress. Localhost-only bind.
 
 - **`app.py`** — the app. Bare launch auto-follows whichever chat is
   currently generating and switches with you between chats; lock it to one

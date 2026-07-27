@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thinking Narrator</title>
+<style>
+  :root {
+    --bg: #17181C; --surface: #1F2127; --edge: #2A2D35;
+    --ink: #E8E4DA; --dim: #8A8FA0; --amber: #E8A33C;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+    display: grid; grid-template-rows: auto 1fr auto; height: 100vh;
+  }
+
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 18px; border-bottom: 1px solid var(--edge);
+  }
+  .lamp {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #3A3D46; flex: none; transition: background .3s;
+  }
+  .lamp.on { background: var(--amber); box-shadow: 0 0 10px var(--amber); }
+  .lamp.pulse { animation: pulse 2.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 14px var(--amber); } }
+  @media (prefers-reduced-motion: reduce) { .lamp.pulse { animation: none; } }
+  h1 { font: italic 600 17px Georgia, serif; letter-spacing: .02em; }
+  #status { margin-left: auto; color: var(--dim); font-size: 12.5px;
+            font-family: Consolas, monospace; text-align: right; }
+
+  .body { display: grid; grid-template-columns: 264px 1fr; min-height: 0; }
+  @media (max-width: 760px) { .body { grid-template-columns: 1fr; } aside { display: none; } }
+
+  aside { border-right: 1px solid var(--edge); overflow-y: auto; padding: 8px; }
+  aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .1em;
+             color: var(--dim); padding: 6px 8px; }
+  .sess {
+    width: 100%; text-align: left; background: none; border: 0; color: var(--ink);
+    padding: 8px 10px; border-radius: 6px; cursor: pointer; font: inherit;
+    display: block;
+  }
+  .sess:hover { background: var(--surface); }
+  .sess.sel { background: var(--surface); box-shadow: inset 2px 0 0 var(--amber); }
+  .sess .t { display: block; white-space: nowrap; overflow: hidden;
+             text-overflow: ellipsis; }
+  .sess .m { display: block; color: var(--dim); font-size: 11.5px;
+             font-family: Consolas, monospace; }
+
+  main { overflow-y: auto; padding: 16px 22px 26px; min-height: 0; }
+  #empty { color: var(--dim); padding: 40px 0; text-align: center;
+           font: italic 15px Georgia, serif; }
+  .card {
+    position: relative; background: var(--surface); border: 1px solid var(--edge);
+    border-radius: 8px; padding: 12px 16px 12px 20px; margin: 0 auto 12px;
+    max-width: 72ch; cursor: pointer;
+  }
+  .card .rail {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+    border-radius: 8px 0 0 8px; background: var(--edge);
+  }
+  .card.playing .rail {
+    background: linear-gradient(to bottom, var(--amber) var(--p, 0%), var(--edge) 0);
+  }
+  .card .ts { font: 11.5px Consolas, monospace; color: var(--dim); }
+  .card .tx {
+    font: 15px/1.6 Georgia, serif; margin-top: 4px; white-space: pre-wrap;
+    display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .card.open .tx { display: block; }
+  .card .more { background: none; border: 0; color: var(--dim); cursor: pointer;
+                font: 11.5px Consolas, monospace; padding: 4px 0 0; }
+  .card .more:hover { color: var(--ink); }
+  .card.playing { border-color: #4A4335; }
+
+  footer {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+    padding: 10px 18px; border-top: 1px solid var(--edge); background: var(--surface);
+  }
+  footer button {
+    background: var(--bg); color: var(--ink); border: 1px solid var(--edge);
+    border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit;
+  }
+  footer button:hover { border-color: var(--dim); }
+  audio { height: 34px; flex: 1 1 260px; min-width: 220px; }
+  label.tog { display: flex; align-items: center; gap: 6px; color: var(--dim);
+              cursor: pointer; user-select: none; }
+  label.tog input { accent-color: var(--amber); }
+  select {
+    background: var(--bg); color: var(--ink); border: 1px solid var(--edge);
+    border-radius: 6px; padding: 5px 8px; font: inherit;
+  }
+  :focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="lamp" id="lamp"></span>
+  <h1>Thinking Narrator</h1>
+  <div id="status">starting…</div>
+</header>
+
+<div class="body">
+  <aside>
+    <h2>Sessions</h2>
+    <div id="sessions"></div>
+  </aside>
+  <main id="main">
+    <div id="empty">No thoughts yet — send a message in any chat and they'll appear here.</div>
+    <div id="log"></div>
+  </main>
+</div>
+
+<footer>
+  <button id="prev" title="Previous thought">⏮</button>
+  <button id="next" title="Next thought">⏭</button>
+  <audio id="audio" controls></audio>
+  <label class="tog"><input type="checkbox" id="follow" checked> Follow active chat</label>
+  <label class="tog"><input type="checkbox" id="autoplay" checked> Read new thoughts</label>
+  <select id="voice" title="Voice">
+    <option value="en-US-ChristopherNeural">Christopher (US, calm)</option>
+    <option value="en-US-EricNeural">Eric (US, mellow)</option>
+    <option value="en-US-GuyNeural">Guy (US, upbeat)</option>
+    <option value="en-US-AriaNeural">Aria (US, expressive)</option>
+    <option value="en-US-JennyNeural">Jenny (US, warm)</option>
+    <option value="en-US-MichelleNeural">Michelle (US, even)</option>
+    <option value="en-GB-RyanNeural">Ryan (UK)</option>
+    <option value="en-GB-SoniaNeural">Sonia (UK)</option>
+  </select>
+  <select id="speed" title="Speed">
+    <option value="0.75">0.75×</option>
+    <option value="1" selected>1×</option>
+    <option value="1.25">1.25×</option>
+    <option value="1.5">1.5×</option>
+    <option value="2">2×</option>
+  </select>
+</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const audio = $("audio"), lamp = $("lamp"), statusEl = $("status");
+
+let sessions = [], selId = null, selMtime = 0;
+let blocks = [], queue = [], playingIdx = null, inflight = false;
+
+const j = async url => {
+  const r = await fetch(url);
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || r.status);
+  return d;
+};
+const setStatus = t => statusEl.textContent = t;
+
+function renderSessions() {
+  const box = $("sessions");
+  box.innerHTML = "";
+  for (const s of sessions) {
+    const b = document.createElement("button");
+    b.className = "sess" + (s.id === selId ? " sel" : "");
+    const when = new Date(s.mtime * 1000).toLocaleString([], {month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit"});
+    b.innerHTML = `<span class="t"></span><span class="m"></span>`;
+    b.querySelector(".t").textContent = s.title;
+    b.querySelector(".m").textContent = `${when} · ${s.project}`;
+    b.onclick = () => { $("follow").checked = false; select(s); };
+    box.appendChild(b);
+  }
+}
+
+function select(s) {
+  if (s.id === selId) return;
+  selId = s.id; selMtime = s.mtime;
+  blocks = []; queue = []; playingIdx = null;
+  $("log").innerHTML = "";
+  $("empty").style.display = "";
+  setStatus(`loading: ${s.title}`);
+  renderSessions();
+}
+
+function addCard(b) {
+  $("empty").style.display = "none";
+  const card = document.createElement("div");
+  card.className = "card"; card.id = "blk" + b.idx;
+  card.innerHTML = `<div class="rail"></div><div class="ts"></div><div class="tx"></div><button class="more">expand</button>`;
+  card.querySelector(".ts").textContent = (b.ts || "").slice(11, 19) || "—";
+  card.querySelector(".tx").textContent = b.text;
+  card.querySelector(".more").onclick = e => {
+    e.stopPropagation();
+    card.classList.toggle("open");
+    e.target.textContent = card.classList.contains("open") ? "collapse" : "expand";
+  };
+  card.onclick = () => play(b.idx);
+  $("log").appendChild(card);
+}
+
+function play(idx) {
+  if (idx < 0 || idx >= blocks.length) return;
+  playingIdx = idx;
+  document.querySelectorAll(".card.playing").forEach(c => c.classList.remove("playing"));
+  const card = $("blk" + idx);
+  if (card) { card.classList.add("playing"); card.scrollIntoView({block: "nearest", behavior: "smooth"}); }
+  audio.src = `/api/audio?session=${selId}&idx=${idx}&voice=${$("voice").value}&rate=10`;
+  audio.playbackRate = parseFloat($("speed").value);
+  audio.play().catch(() => setStatus("click ▶ once to allow audio"));
+  setStatus(`playing thought ${idx + 1} of ${blocks.length}`);
+}
+
+function pump() {
+  if ((audio.paused || audio.ended) && !audio.seeking && queue.length)
+    play(queue.shift());
+}
+
+audio.onended = () => { lamp.classList.remove("on"); pump(); };
+audio.onplay = () => lamp.classList.add("on");
+audio.onpause = () => lamp.classList.remove("on");
+audio.ontimeupdate = () => {
+  const card = $("blk" + playingIdx);
+  if (card && audio.duration)
+    card.querySelector(".rail").style.setProperty("--p", (audio.currentTime / audio.duration * 100) + "%");
+};
+audio.onerror = () => setStatus("audio failed — offline? edge-tts needs network");
+$("speed").onchange = () => audio.playbackRate = parseFloat($("speed").value);
+$("prev").onclick = () => play((playingIdx ?? 1) - 1);
+$("next").onclick = () => play((playingIdx ?? -1) + 1);
+$("follow").onchange = () => { if ($("follow").checked) tick(); };
+
+async function tick() {
+  if (inflight) return;
+  inflight = true;
+  try {
+    sessions = await j("/api/sessions");
+    renderSessions();
+    if ($("follow").checked && sessions.length && sessions[0].id !== selId)
+      select(sessions[0]);
+    if (selId) {
+      const fresh = await j(`/api/blocks?session=${selId}&after=${blocks.length}`);
+      if (fresh.length) {
+        const firstLoad = blocks.length === 0;
+        for (const b of fresh) { blocks.push(b); addCard(b); }
+        if ($("autoplay").checked) {
+          if (firstLoad) {
+            // history loads silently; speak only the block that just arrived
+            if (Date.now() / 1000 - selMtime < 30) queue.push(blocks.length - 1);
+          } else {
+            for (const b of fresh) queue.push(b.idx);
+          }
+        }
+        pump();
+      }
+      const cur = sessions.find(s => s.id === selId);
+      if (cur && audio.paused && !queue.length)
+        setStatus(`${$("follow").checked ? "following" : "locked"}: ${cur.title}`);
+    }
+    lamp.classList.toggle("pulse", $("follow").checked && $("autoplay").checked && audio.paused);
+  } catch (e) {
+    setStatus("server unreachable — is server.py running?");
+  }
+  inflight = false;
+}
+setInterval(tick, 1500);
+tick();
+</script>
+</body>
+</html>
