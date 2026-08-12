@@ -8,19 +8,30 @@
 # new chats open as terminal tabs and the narrator follows whichever is
 # active.
 #
-#   powershell -ExecutionPolicy Bypass -File app-shell.ps1
-#   ...  -PanelPercent 40     # wider narrator column
-#   ...  -NoClaude            # plain shell instead of launching claude
+# Run it FROM the terminal you want to nest and that window is adopted in
+# place — your running chat keeps running, it just changes parent. Closing the
+# frame hands the window straight back to the desktop, so this is a toggle:
+# nest when you want the narrator, close when you want a plain terminal.
 #
-# Drag the divider to re-split. Closing the shell releases the terminal back
-# to the desktop as a normal window (an in-progress chat is not killed) and
-# closes the narrator pane.
+#   powershell -ExecutionPolicy Bypass -File app-shell.ps1   # nest THIS terminal
+#   ...  -NewTerminal        # open a fresh terminal instead of nesting this one
+#   ...  -PanelPercent 40    # wider narrator column
+#   ...  -NoClaude           # with -NewTerminal: plain shell, do not run claude
+#   ...  -Hwnd <handle>      # nest a specific window
+#
+# Invoked from anywhere that is not a Windows Terminal window (a shortcut,
+# Explorer), it opens a fresh terminal instead — there is nothing to nest.
+#
+# Drag the divider to re-split. Diagnostics: %TEMP%\thinking-narrator-shell.log
 
 param(
   [int]$Port = 8917,
   [ValidateRange(15, 85)][int]$PanelPercent = 32,
   [string]$StartDir = $HOME,
-  [switch]$NoClaude
+  [switch]$NoClaude,
+  [switch]$NewTerminal,       # force a fresh terminal instead of nesting this one
+  [long]$Hwnd = 0,            # explicit terminal window to adopt
+  [switch]$Detached           # internal: set on the relaunched window-owning process
 )
 
 $ErrorActionPreference = "Stop"
@@ -71,10 +82,46 @@ public class TNWin {
     return found.ToArray();
   }
   public static uint PidOf(IntPtr h) { uint pid; GetWindowThreadProcessId(h, out pid); return pid; }
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  public static string ClassOf(IntPtr h) {
+    var sb = new StringBuilder(256); GetClassName(h, sb, 256); return sb.ToString();
+  }
 }
 "@
 
 $WT_CLASS = "CASCADIA_HOSTING_WINDOW_CLASS"
+$LOGFILE = Join-Path $env:TEMP "thinking-narrator-shell.log"
+function Log($msg) {
+  Write-Host $msg
+  try { Add-Content -Path $LOGFILE -Value "$(Get-Date -Format 'HH:mm:ss') $msg" } catch { }
+}
+
+# ---- pass 1: pick the target window, then hand off to a detached process ----
+# The window-owning process must NOT be the shell Arath typed into: this
+# script blocks in Application.Run until the frame closes, which would leave
+# the pane it just adopted sitting at a busy prompt. So the first pass only
+# captures the target (while that terminal is still foreground, before any
+# focus can move) and relaunches itself detached.
+if (-not $Detached) {
+  $target = $Hwnd
+  if ($target -eq 0 -and -not $NewTerminal) {
+    $fg = [TNWin]::GetForegroundWindow()
+    if ([TNWin]::ClassOf($fg) -eq $WT_CLASS) { $target = $fg.ToInt64() }
+  }
+  $relaunch = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"",
+                "-Detached", "-Hwnd", $target, "-Port", $Port,
+                "-PanelPercent", $PanelPercent, "-StartDir", "`"$StartDir`"")
+  if ($NoClaude)    { $relaunch += "-NoClaude" }
+  if ($NewTerminal) { $relaunch += "-NewTerminal" }
+  Start-Process "powershell" -ArgumentList $relaunch -WindowStyle Hidden
+  if ($target -ne 0) {
+    Write-Host "[shell] nesting this terminal (hwnd=$target) alongside the narrator."
+    Write-Host "[shell] close the frame to get this window back. Log: $LOGFILE"
+  } else {
+    Write-Host "[shell] opening a new terminal + narrator. Log: $LOGFILE"
+  }
+  return
+}
 
 function Wait-NewClassWindow([string]$cls, $before, [int]$timeoutMs = 20000) {
   $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -212,7 +259,22 @@ $edgeHwnd = [IntPtr]::Zero; $edgeStyle = 0
 try {
 
 # ---- adopt the terminal (left) ----
+# Nesting a terminal Arath is already working in is the common case, so it is
+# the default: no new window, no second `claude`, his running session simply
+# changes parent. Closing the frame hands it straight back.
+if ($Hwnd -ne 0) {
+  $termHwnd = [IntPtr]$Hwnd
+  if ([TNWin]::ClassOf($termHwnd) -ne $WT_CLASS) {
+    throw "window $Hwnd is not a Windows Terminal window (class: $([TNWin]::ClassOf($termHwnd)))"
+  }
+  $termName = "WindowsTerminal (nested in place)"
+  $termPid = [TNWin]::PidOf($termHwnd)
+  $termStyle = Adopt $termHwnd $hostHwnd
+  Log "[shell] terminal  : $termName pid=$termPid hwnd=$termHwnd"
+}
+
 $cmd = if ($NoClaude) { "" } else { "claude" }
+if ($termHwnd -eq [IntPtr]::Zero) {
 $termName = "none"
 # Resolve wt.exe by path as well as by PATH: it is a WindowsApps execution
 # alias, and PATH does not always carry that directory into a nested,
@@ -248,6 +310,7 @@ if ($termHwnd -eq [IntPtr]::Zero) {
 }
 $termPid = [TNWin]::PidOf($termHwnd)
 $termStyle = Adopt $termHwnd $hostHwnd
+}   # end: launch-a-terminal branch
 
 # ---- adopt the narrator (right) ----
 $edge = @(
@@ -311,13 +374,23 @@ $form.Add_FormClosing({
   try { $edgeProc.CloseMainWindow() | Out-Null } catch { }
 })
 
-Write-Host "[shell] terminal  : $termName pid=$termPid hwnd=$termHwnd parent=$($U::GetParent($termHwnd))"
-Write-Host "[shell] narrator  : msedge pid=$($edgeProc.Id) hwnd=$edgeHwnd parent=$($U::GetParent($edgeHwnd))"
-Write-Host "[shell] host      : hwnd=$hostHwnd  adopted=$(($U::GetParent($termHwnd) -eq $hostHwnd) -and ($U::GetParent($edgeHwnd) -eq $hostHwnd))"
-Write-Host "[shell] running - close the window to release the terminal."
+Log "[shell] terminal  : $termName pid=$termPid hwnd=$termHwnd parent=$($U::GetParent($termHwnd))"
+Log "[shell] narrator  : msedge pid=$($edgeProc.Id) hwnd=$edgeHwnd parent=$($U::GetParent($edgeHwnd))"
+Log "[shell] host      : hwnd=$hostHwnd  adopted=$(($U::GetParent($termHwnd) -eq $hostHwnd) -and ($U::GetParent($edgeHwnd) -eq $hostHwnd))"
+Log "[shell] running - close the frame to release the terminal."
 
 $script:termHwnd = $termHwnd
 $form.Add_Activated({ Set-PaneFocus $script:termHwnd })
 [void]$U::SetForegroundWindow($hostHwnd)
 Set-PaneFocus $termHwnd
-[System.Windows.Forms.Application]::Run($form)
+
+# finally, not just FormClosing: the adopted pane can be Arath's live chat, and
+# an adopted window is destroyed with its host. FormClosing covers the normal
+# path; this covers an unhandled error in the message loop. Release is
+# idempotent, so running both is harmless.
+try {
+  [System.Windows.Forms.Application]::Run($form)
+} finally {
+  Release $termHwnd $termStyle
+  Log "[shell] closed - terminal released (parent=$($U::GetParent($termHwnd)))"
+}

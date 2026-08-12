@@ -37,12 +37,15 @@ For the full spec, see `C:\Users\Arath\OneDrive\Claude Memory\CONVENTIONS.md` §
 - **Edge does the same for a given `--user-data-dir`**: a second `--app` launch is handed to the process that already owns the profile. Find it by command line (`--app=` present, `--type=` absent = the browser process, not a renderer).
 - **Restyle before reparenting**: clear `WS_POPUP`/`WS_CAPTION`/`WS_THICKFRAME` and set `WS_CHILD`, then `SetParent`. Keep the original style so closing can restore it.
 - **`SetFocus` alone does nothing across processes** — focus is per input queue. Wrap it in `AttachThreadInput(me, targetThread, true/false)`.
-- **An adopted window dies with its host.** Any failure after adoption must `SetParent(NULL)` + restore style before rethrowing, or a live chat is destroyed by an unrelated error.
+- **An adopted window dies with its host.** Any failure after adoption must `SetParent(NULL)` + restore style before rethrowing, or a live chat is destroyed by an unrelated error. Since D14 the adopted pane is usually Arath's live chat, so release runs in three places: `FormClosing`, the adoption `catch`, and a `finally` around `Application.Run`.
+- **Never run the window-owning process in the terminal being adopted** — it blocks in `Application.Run` until the frame closes, leaving the nested pane at a busy prompt. Pass 1 captures the foreground window and relaunches detached (`-Detached -Hwnd n`).
+- **Do not run `narrate` from a non-interactive/background context** to test it: with no `-Hwnd`, it adopts whatever window is foreground, which may be Arath's live session. Test with an explicit `-Hwnd` against a throwaway `wt -w new` window.
 
 ## Key file paths
 
 - Web player (main entrance): `server.py` + `index.html`, launched by `launch.bat` / desktop shortcut "Thinking Narrator"
-- Side-by-side app layout: `launch-app.bat` → `launch-app.ps1` (terminal left, `?panel=1` narrator right)
+- Single-window app shell: `narrate` (shim in `~\.local\bin`) → `app-shell.ps1`; nests the current terminal, close to un-nest. Log: `%TEMP%\thinking-narrator-shell.log`
+- Two-window fallback (no reparenting): `launch-app.bat` → `launch-app.ps1`
 - CLI single-chat app: `app.py`; ambient multi-chat watcher: `narrate.py` (shared core Tail/extract/clean/speak lives in `narrate.py`)
 - Data source: `~\.claude\projects\<slug>\<session>.jsonl` (read-only tail)
 - MP3/timings cache: `%TEMP%\thinking-narrator-cache\` (hourly eviction, `--cache-mb`, default 200)

@@ -58,6 +58,14 @@ D12 deferred the one-window app and offered the choice; Arath ruled for it immed
 
 Consequences accepted: cross-process reparenting needs styles rewritten to `WS_CHILD` before `SetParent`, and focus needs `AttachThreadInput` (focus is per input queue). Closing the shell **releases** the terminal back to the desktop as a normal window rather than destroying it, so an in-progress chat survives; any error during adoption does the same before rethrowing. Both `launch-app.*` (two windows) and `app-shell.*` (one window) ship — the two-window version stays as the no-reparenting fallback.
 
+## 2026-08-12 — D14: The shell nests the terminal you are already in (refines D13)
+
+D13 shipped a shell that *launched* a terminal. Arath's correction, after using it: "if I'm already in a terminal clicking around, doing some work, is there a way that I could invoke the narrator and take my existing terminal instance and nest it inside of the shell? and then close the shell and just go back to my plain terminal whenever I need to." So nesting-in-place is now the default and the whole thing is a **toggle**: `narrate` from any Windows Terminal window adopts that window; closing the frame hands it back. Launching a new terminal is the fallback for when the invoker is not a terminal (Explorer, a shortcut) or `-NewTerminal` is passed.
+
+Two consequences: (1) the script relaunches itself detached, because the window-owning process blocks in `Application.Run` and would otherwise leave the nested pane at a busy prompt — pass 1 captures the foreground window while it is still foreground, then hands off; (2) since the adopted pane is now usually a **live chat**, release moved into a `finally` around the message loop as well as `FormClosing` and the adoption `catch`. Verified on a throwaway window: after nest → close, the window is alive, `parent=0`, and its style is restored byte-identical (0x14CF0000).
+
+`narrate.cmd` installed to `~\.local\bin` (already on PATH next to `claude.exe`) so it is typeable from anywhere.
+
 ## 2026-07-26 — D9: Blog rulings (Arath, interactive)
 
 Repo flips public **the day the blog post ships** (not before, not never). Post angle: **"I made Claude Code think out loud"** — demo-first story ending at the karaoke player following live reasoning. Venue: **the portfolio site (arath.site)**, pending a page-order/IA review Arath opened in the same ruling session.

@@ -41,25 +41,42 @@ Three entry points:
   silently; only newly arriving thoughts auto-play. Amber lamp = playing;
   the playing card's left rail fills with progress. Localhost-only bind.
 
-  **App shell (v9) — one window:** `app-shell.bat` is the real app. A host
-  window **adopts** two existing windows with `SetParent`: the actual Windows
-  Terminal running `claude` on the left, the narrator on the right, a
-  draggable divider between them, one taskbar entry. Adoption rather than
-  re-implementation is deliberate — Windows Terminal keeps its tabs, panes,
-  profiles and keybindings, so opening a new chat is a new terminal tab and
-  the narrator follows whichever one is active.
+  **App shell (v9) — one window, and it is a toggle:** type `narrate` in any
+  Windows Terminal window and *that window* is nested into a frame with the
+  narrator beside it. Your running chat keeps running — the window simply
+  changes parent. Close the frame and the terminal is handed straight back to
+  the desktop, plain, narrator gone. Nest when you want narration; close when
+  you do not.
 
   ```
-  app-shell.bat                                  # one window (recommended)
-  powershell -File app-shell.ps1 -PanelPercent 40
-  powershell -File app-shell.ps1 -NoClaude       # plain shell in the left pane
+  narrate                        # nest THIS terminal + narrator
+  narrate -NewTerminal           # open a fresh terminal instead of nesting
+  narrate -PanelPercent 40       # wider narrator column
+  narrate -Hwnd <handle>         # nest one specific window
+  app-shell.bat                  # same thing; from Explorer it opens a new terminal
   ```
 
-  Closing the shell **releases** the terminal back to the desktop as a normal
-  window instead of destroying it, so a chat in progress survives; a failure
-  during adoption releases it the same way before reporting. Needs no
-  dependencies beyond what Windows already has — Windows Terminal, Edge, and
-  WinForms.
+  A host window **adopts** both panes with `SetParent`: the real Windows
+  Terminal on the left, the narrator's Edge app window on the right, draggable
+  divider, one taskbar entry. Adoption rather than re-implementation is the
+  point — Windows Terminal keeps its tabs, panes, profiles and keybindings, so
+  a new chat is just a new tab and the narrator follows whichever is active.
+
+  Invoking it does not tie up the shell you typed in: pass 1 captures the
+  target window and relaunches itself detached, because the window-owning
+  process blocks until the frame closes and would otherwise leave the nested
+  pane sitting at a busy prompt.
+
+  Release is careful, because the adopted pane is usually a live chat. The
+  original window style is saved and restored exactly; the terminal is handed
+  back on normal close, on an error during adoption, and in a `finally` around
+  the message loop. Verified: after a nest/close cycle the window is alive,
+  `parent=0`, style byte-identical (`0x14CF0000`). Diagnostics land in
+  `%TEMP%\thinking-narrator-shell.log`.
+
+  Needs no dependencies beyond what Windows already has — Windows Terminal,
+  Edge, and WinForms. `narrate.cmd` is installed to `~\.local\bin` (already on
+  PATH, alongside `claude.exe`).
 
   **Two-window layout (v9):** `launch-app.bat` is the same arrangement without
   reparenting — two separate windows snapped side by side. Kept as the
