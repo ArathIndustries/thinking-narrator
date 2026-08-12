@@ -172,6 +172,10 @@
               cursor: pointer; user-select: none; }
   label.tog input { accent-color: var(--amber); }
   .lbl { color: var(--dim); font-size: 12px; }
+  #upd { display: none; background: var(--amber); color: #14100A; border: 0;
+         border-radius: 5px; padding: 3px 9px; cursor: pointer;
+         font: 600 11.5px Consolas, monospace; flex: none; }
+  #upd:hover { filter: brightness(1.12); }
   #sessSel { display: none; max-width: 230px; font-size: 12.5px; }
 
   /* ---- panel: compact sidecar for docking beside a terminal ---- */
@@ -198,6 +202,7 @@
   <span class="lamp" id="lamp"></span>
   <h1>Thinking Narrator</h1>
   <select id="sessSel" title="Session (panel layout has no sidebar)"></select>
+  <button id="upd" title="A new version of this page is ready — click to load it now">↻ update</button>
   <div id="status">starting…</div>
 </header>
 
@@ -616,6 +621,7 @@ function pump() {
 
 audio.onended = () => {
   lamp.classList.remove("on"); $("pp").textContent = "▶"; updateChrome();
+  maybeReload();               // end of a block is the seam that costs nothing
   if ($("through").checked && playing.sid !== null) {
     const nxt = step(playing.sid, playing.idx + 1, 1);
     if (nxt >= 0) {
@@ -627,7 +633,10 @@ audio.onended = () => {
   pump();
 };
 audio.onplay = () => { lamp.classList.add("on"); $("pp").textContent = "⏸"; updateChrome(); };
-audio.onpause = () => { lamp.classList.remove("on"); $("pp").textContent = "▶"; updateChrome(); };
+audio.onpause = () => {
+  lamp.classList.remove("on"); $("pp").textContent = "▶"; updateChrome();
+  maybeReload();
+};
 audio.onerror = () => setStatus("audio failed — offline? edge-tts needs network");
 audio.ontimeupdate = () => {
   if (!seeking && audio.duration) {
@@ -711,6 +720,7 @@ function updateJump() {
   $("jump").style.display =
     main.scrollTop + main.clientHeight < main.scrollHeight - 200 ? "" : "none";
 }
+$("upd").onclick = () => location.reload();
 main.onscroll = updateJump;
 $("jump").onclick = () => main.scrollTo({ top: main.scrollHeight, behavior: "smooth" });
 
@@ -718,13 +728,27 @@ $("jump").onclick = () => main.scrollTo({ top: main.scrollHeight, behavior: "smo
 /* Reload when the page itself changes on disk. Only while paused — a reload
    mid-thought would lose your place, and a shipped change is never urgent
    enough to interrupt listening. */
-let build = null;
+let build = null, staleBuild = false;
 async function checkBuild() {
   try {
     const v = await j("/api/version");
     if (build === null) { build = v.build; return; }
-    if (v.build !== build && audio.paused && !pendingKey) location.reload();
+    if (v.build !== build && !staleBuild) {
+      staleBuild = true;                       // latch it; do not lose the signal
+      $("upd").style.display = "";
+      setStatus("new version ready");
+    }
   } catch (e) { /* older server without /api/version */ }
+  maybeReload();
+}
+
+/* The first version tested `audio.paused` at poll time and dropped the signal
+   when the moment was wrong. With tool calls narrating, playback is near
+   continuous and that idle sliver falls between 1.5 s polls almost every
+   time, so the reload never fired. Latch the flag instead and retry at every
+   natural seam — end of a block, or a pause. */
+function maybeReload() {
+  if (staleBuild && audio.paused && !pendingKey) location.reload();
 }
 
 async function tick() {
