@@ -1,6 +1,21 @@
 # thinking-narrator
 
-Speaks Claude Code `thinking` blocks aloud, near-live or as history replay.
+Speaks Claude Code aloud, near-live or as history replay — both the
+`thinking` blocks and the printed replies, either alone or interleaved.
+
+**Read mode** (v9) is the switch: **Thoughts** (reasoning only, the original
+behavior), **Replies** (what the assistant actually printed to the terminal),
+or **Both** (default — every block in the order the CLI showed it). It is a
+segmented control in the web player's footer and `--kinds` on both CLIs.
+Thoughts and replies get separate voices, so which one is speaking is
+audible without reading the screen.
+
+Printed replies are markdown, so they are stripped to speakable prose before
+synthesis: headings, list markers, emphasis, links, and table pipes go; code
+fences are dropped (a reply that is *only* code speaks "Code block."). The
+rule is that markers are deleted but no word is ever invented — that is what
+keeps the karaoke highlighting aligned against the raw text on the card.
+
 Three entry points:
 
 - **`server.py`** — the web player (recommended). `py server.py` opens
@@ -9,6 +24,8 @@ Three entry points:
 
   | want | how |
   |---|---|
+  | thoughts / replies / both | read-mode switch in the footer |
+  | tell thought from reply by ear | separate voice dropdowns (thought / reply) |
   | pause / resume mid-thought | player pause button |
   | rewind / scrub inside a thought | drag the seek bar (Range-request backed) |
   | replay any past thought | click its card in the log |
@@ -23,6 +40,27 @@ Three entry points:
   `%TEMP%\thinking-narrator-cache`, so replays are instant. History loads
   silently; only newly arriving thoughts auto-play. Amber lamp = playing;
   the playing card's left rail fills with progress. Localhost-only bind.
+
+  **App layout (v9):** `launch-app.bat` puts Claude Code and the narrator
+  side by side on the primary monitor — Windows Terminal running `claude` on
+  the left, the narrator on the right in a chromeless Edge app window using
+  the compact **panel** layout (no sidebar; a session dropdown moves into the
+  header). Verified 2026-08-12 on a 1920×1040 work area: terminal 1306×1040
+  at 0,0, narrator 614×1040 at 1306,0.
+
+  ```
+  launch-app.bat                                    # 32% narrator column
+  powershell -File launch-app.ps1 -PanelPercent 40  # wider narrator
+  powershell -File launch-app.ps1 -NoTerminal       # narrator only
+  py server.py --panel                              # panel layout, normal browser
+  ```
+
+  Placement goes through `SetWindowPos`, not the browser's `--window-size`,
+  and the app window runs in its own `--user-data-dir`. Both are required:
+  an already-running Edge otherwise opens the app window inside an existing
+  process, which leaves no new window handle to position (measured, not
+  assumed). Consequence: the panel keeps its own saved voice/mode settings,
+  separate from your normal browser profile.
 
   **Comfort pack (v8):**
   - **Launch:** double-click the desktop shortcut "Thinking Narrator"
@@ -70,8 +108,14 @@ py app.py --pick                           # choose a session to lock to, via me
 py app.py --session 1 --mode live          # locked to newest session, no prompts
 py app.py --session f9fc --mode last:5     # replay last 5 blocks, then follow it live
 py app.py --session 1 --mode all --once    # replay full history, then exit
+py app.py --kinds thinking                 # reasoning only (pre-v9 behavior)
+py app.py --kinds text                     # printed replies only
+py app.py --voice-reply en-US-AriaNeural   # second voice for replies
 py app.py --list-voices
 ```
+
+- **`--kinds`** (`thinking` | `text` | `both`, default `both`) selects what is
+  read. `--mode` is unrelated — it selects *when* (live vs. history replay).
 
 - **Auto-follow (default):** narrates the session with the newest thinking
   block; when a different chat becomes active it announces the switch and
@@ -104,6 +148,11 @@ Dependency: `py -m pip install edge-tts` (installed 2026-07-26; verified
 
 - Claude Code appends every assistant message — including `thinking` content
   blocks — to `~/.claude/projects/<project-slug>/<session-id>.jsonl`.
+- (2026-08-12) `thinking`, `text`, and `tool_use` blocks share one
+  `message.content` list, in the order the CLI displayed them; `text` is the
+  printed reply. A live session measured 25 replies to 24 thoughts. **`user`
+  records carry `text` blocks too** (the prompts), so reply extraction must
+  filter on `type == "assistant"` or it narrates your own words back at you.
 - Flush is per message segment, observed to land roughly when that segment's
   tool calls begin executing. Narration therefore lags generation by one
   tool-execution cycle (seconds), not by whole turns. For a final answer with
@@ -120,7 +169,8 @@ Dependency: `py -m pip install edge-tts` (installed 2026-07-26; verified
 ## Usage
 
 ```
-py narrate.py                 # watch ALL sessions, speak new thinking blocks
+py narrate.py                 # watch ALL sessions, speak thoughts and replies
+py narrate.py --kinds thinking  # reasoning only (pre-v9 behavior)
 py narrate.py --dry-run       # print instead of speak
 py narrate.py --rate 4        # faster voice (-10..10)
 py narrate.py --all           # speak every block instead of skipping to newest

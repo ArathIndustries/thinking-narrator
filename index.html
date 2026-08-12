@@ -8,6 +8,9 @@
   :root {
     --bg: #0B0C0F; --surface: #13151A; --raise: #191C22; --edge: #23262E;
     --ink: #E6E2D8; --dim: #7C8090; --faint: #4A4E5A; --amber: #E8A33C;
+    /* amber = thinking, sky = printed reply. One accent per block kind, so
+       which one is speaking is legible without reading a word of it. */
+    --sky: #7FB6D9; --sky-edge: #2E4652; --amber-edge: #4A4335;
   }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; }
@@ -79,12 +82,32 @@
   .card .more { background: none; border: 0; color: var(--dim); cursor: pointer;
                 font: 11.5px Consolas, monospace; padding: 4px 0 0; }
   .card .more:hover { color: var(--ink); }
-  .card.playing { border-color: #4A4335; }
+  .card.playing { border-color: var(--amber-edge); }
 
   .tx.karaoke { color: var(--faint); }
   .tx.karaoke .w.done { color: var(--ink); }
   .tx.karaoke .w.now { background: var(--amber); color: #14100A;
                        border-radius: 3px; padding: 0 2px; margin: 0 -2px; }
+
+  /* ---- block kinds ---- */
+  .card .kind { display: inline-block; font: 10.5px Consolas, monospace;
+                text-transform: uppercase; letter-spacing: .08em;
+                padding: 0 6px; margin-right: 9px; border-radius: 4px;
+                border: 1px solid var(--amber-edge); color: var(--amber); }
+  .card.k-text .kind { border-color: var(--sky-edge); color: var(--sky); }
+  .card.k-text .tx { font-family: "Segoe UI", system-ui, sans-serif;
+                     font-size: 14.5px; }
+  .card.k-text.playing { border-color: var(--sky-edge); }
+  .card.k-text.playing .rail {
+    background: linear-gradient(to bottom, var(--sky) var(--p, 0%), var(--edge) 0);
+  }
+  .card.k-text.loading .rail { background: var(--sky); }
+  .card.k-text .ts::after { color: var(--sky) !important; }
+  .card.k-text .tx.karaoke .w.now { background: var(--sky); }
+
+  /* ---- read mode: hide the kind you are not listening to ---- */
+  #log.m-thinking .card.k-text,
+  #log.m-text .card.k-thinking { display: none; }
 
   #gen { display: none; color: var(--dim); font: italic 13.5px Georgia, serif;
          padding: 2px 4px 10px; }
@@ -129,6 +152,25 @@
   label.tog { display: flex; align-items: center; gap: 6px; color: var(--dim);
               cursor: pointer; user-select: none; }
   label.tog input { accent-color: var(--amber); }
+  .lbl { color: var(--dim); font-size: 12px; }
+  #sessSel { display: none; max-width: 230px; font-size: 12.5px; }
+
+  /* ---- panel: compact sidecar for docking beside a terminal ---- */
+  body.panel aside { display: none; }
+  body.panel .body { grid-template-columns: 1fr; }
+  body.panel h1 { display: none; }
+  body.panel #sessSel { display: block; }
+  body.panel header { padding: 7px 10px; gap: 9px; }
+  body.panel #status { font-size: 11px; }
+  body.panel main { padding: 10px 12px 20px; }
+  body.panel .card { padding: 9px 13px 9px 16px; margin-bottom: 9px; }
+  body.panel .card .tx { font-size: 14px; line-height: 1.55; -webkit-line-clamp: 4; }
+  body.panel .card.k-text .tx { font-size: 13.5px; }
+  body.panel footer { padding: 7px 9px; gap: 5px 8px; }
+  body.panel footer .btn { padding: 5px 9px; }
+  body.panel .lbl, body.panel #time { font-size: 11px; }
+  body.panel #jump { right: 14px; bottom: 108px; }
+
   :focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
 </style>
 </head>
@@ -136,6 +178,7 @@
 <header>
   <span class="lamp" id="lamp"></span>
   <h1>Thinking Narrator</h1>
+  <select id="sessSel" title="Session (panel layout has no sidebar)"></select>
   <div id="status">starting…</div>
 </header>
 
@@ -145,7 +188,7 @@
     <div id="sessions"></div>
   </aside>
   <main id="main">
-    <div id="empty">No thoughts yet — send a message in any chat and they'll appear here.</div>
+    <div id="empty">Nothing yet — send a message in any chat and it'll appear here.</div>
     <div id="log"></div>
     <div id="gen"><span class="dot">●</span> thinking…</div>
   </main>
@@ -161,11 +204,26 @@
   <span id="time">0:00 / 0:00</span>
   <input type="range" id="seek" min="0" max="1000" value="0">
   <span class="vol">vol <input type="range" id="vol" min="0" max="1" step="0.01" value="1" title="Volume (m mutes)"></span>
-  <select id="voice" title="Voice">
+  <span class="segs" id="mode" title="What gets read aloud">
+    <button data-m="thinking">Thoughts</button><button data-m="text">Replies</button><button data-m="both" class="act">Both</button>
+  </span>
+  <span class="lbl">thought</span>
+  <select id="voice" title="Voice for thinking blocks">
     <option value="en-US-ChristopherNeural">Christopher (US, calm)</option>
     <option value="en-US-EricNeural">Eric (US, mellow)</option>
     <option value="en-US-GuyNeural">Guy (US, upbeat)</option>
     <option value="en-US-AriaNeural">Aria (US, expressive)</option>
+    <option value="en-US-JennyNeural">Jenny (US, warm)</option>
+    <option value="en-US-MichelleNeural">Michelle (US, even)</option>
+    <option value="en-GB-RyanNeural">Ryan (UK)</option>
+    <option value="en-GB-SoniaNeural">Sonia (UK)</option>
+  </select>
+  <span class="lbl">reply</span>
+  <select id="voiceR" title="Voice for printed replies — pick a different one and you can tell them apart by ear">
+    <option value="en-US-ChristopherNeural">Christopher (US, calm)</option>
+    <option value="en-US-EricNeural">Eric (US, mellow)</option>
+    <option value="en-US-GuyNeural">Guy (US, upbeat)</option>
+    <option value="en-US-AriaNeural" selected>Aria (US, expressive)</option>
     <option value="en-US-JennyNeural">Jenny (US, warm)</option>
     <option value="en-US-MichelleNeural">Michelle (US, even)</option>
     <option value="en-GB-RyanNeural">Ryan (UK)</option>
@@ -176,7 +234,7 @@
   </span>
   <label class="tog" title="After a thought ends, keep playing the next one"><input type="checkbox" id="through"> Play through</label>
   <label class="tog"><input type="checkbox" id="follow" checked> Follow active chat</label>
-  <label class="tog"><input type="checkbox" id="autoplay" checked> Read new thoughts</label>
+  <label class="tog"><input type="checkbox" id="autoplay" checked> Auto-read new</label>
 </footer>
 
 <script>
@@ -218,19 +276,63 @@ updateChrome();
 /* ---------- settings persistence ---------- */
 const saved = JSON.parse(localStorage.getItem("tn-prefs") || "{}");
 if (saved.voice) $("voice").value = saved.voice;
+if (saved.voiceR) $("voiceR").value = saved.voiceR;
 if (saved.vol !== undefined) $("vol").value = saved.vol;
 if (saved.follow !== undefined) $("follow").checked = saved.follow;
 if (saved.autoplay !== undefined) $("autoplay").checked = saved.autoplay;
 if (saved.through !== undefined) $("through").checked = saved.through;
 let rate = saved.rate || 1;
+let mode = saved.mode || "both";        // thinking | text | both
 audio.volume = parseFloat($("vol").value);
 function savePrefs() {
   localStorage.setItem("tn-prefs", JSON.stringify({
-    voice: $("voice").value, vol: audio.volume, rate,
-    follow: $("follow").checked, autoplay: $("autoplay").checked,
+    voice: $("voice").value, voiceR: $("voiceR").value, vol: audio.volume, rate,
+    mode, follow: $("follow").checked, autoplay: $("autoplay").checked,
     through: $("through").checked,
   }));
 }
+
+/* ---------- read mode ---------- */
+const kindOK = kind => mode === "both" || mode === kind;
+const voiceFor = kind => (kind === "text" ? $("voiceR") : $("voice")).value;
+const nounOf = kind => kind === "text" ? "reply" : "thought";
+/* First block at or after `from` in direction `dir` that the current mode
+   plays — every transport control walks the list through this, so hidden
+   kinds are skipped rather than played into a hidden card. */
+function step(sid, from, dir) {
+  const st = S[sid];
+  if (!st) return -1;
+  for (let i = from; i >= 0 && i < st.blocks.length; i += dir)
+    if (kindOK(st.blocks[i].kind)) return i;
+  return -1;
+}
+const newestVisible = sid => step(sid, (S[sid]?.blocks.length ?? 0) - 1, -1);
+/* "nothing here" is a question about the current mode, not the raw count:
+   a thoughts-only session in Replies mode is empty from where you sit. */
+function updateEmpty() {
+  $("empty").style.display = selId && newestVisible(selId) >= 0 ? "none" : "";
+}
+function applyMode() {
+  $("log").className = "m-" + mode;
+  document.querySelectorAll("#mode button")
+    .forEach(b => b.classList.toggle("act", b.dataset.m === mode));
+  queue = queue.filter(q => kindOK(S[q.sid]?.blocks[q.idx]?.kind));
+  updateEmpty();
+  updateJump();
+}
+$("mode").onclick = e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  mode = b.dataset.m;
+  applyMode();
+  savePrefs();
+};
+
+applyMode();
+
+/* panel layout: compact, sidebar hidden — for docking beside a terminal */
+if (new URLSearchParams(location.search).get("panel") === "1")
+  document.body.classList.add("panel");
 const seen = JSON.parse(localStorage.getItem("tn-seen") || "{}");
 const saveSeen = () => localStorage.setItem("tn-seen", JSON.stringify(seen));
 
@@ -246,9 +348,14 @@ function ensure(sid) {
 }
 
 function renderSessions() {
-  const box = $("sessions");
+  const box = $("sessions"), sel = $("sessSel");
   box.innerHTML = "";
+  sel.innerHTML = "";
   for (const s of sessions) {
+    const o = document.createElement("option");
+    o.value = s.id; o.textContent = s.title;
+    if (s.id === selId) o.selected = true;
+    sel.appendChild(o);
     const b = document.createElement("button");
     b.className = "sess" + (s.id === selId ? " sel" : "");
     const when = new Date(s.mtime * 1000).toLocaleString([], {month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit"});
@@ -276,7 +383,7 @@ function select(sid) {
   const st = ensure(sid);
   for (const id in S) S[id].el.style.display = id === sid ? "" : "none";
   queue = queue.filter(q => q.sid === sid);                  // stale auto-play drops
-  $("empty").style.display = st.blocks.length ? "none" : "";
+  updateEmpty();
   main.scrollTop = st.scroll ?? main.scrollHeight;           // restore, or jump to newest
   renderSessions();
   updateChrome();
@@ -286,9 +393,10 @@ function select(sid) {
 /* ---------- thought log ---------- */
 function addCard(sid, b) {
   const card = document.createElement("div");
-  card.className = "card"; card.id = `blk-${sid}-${b.idx}`;
-  card.innerHTML = `<div class="rail"></div><div class="ts"></div><div class="tx"></div><button class="more">expand</button>`;
-  card.querySelector(".ts").textContent = (b.ts || "").slice(11, 19) || "—";
+  card.className = `card k-${b.kind}`; card.id = `blk-${sid}-${b.idx}`;
+  card.innerHTML = `<div class="rail"></div><div class="ts"><span class="kind"></span><span class="when"></span></div><div class="tx"></div><button class="more">expand</button>`;
+  card.querySelector(".kind").textContent = nounOf(b.kind);
+  card.querySelector(".when").textContent = (b.ts || "").slice(11, 19) || "—";
   card.querySelector(".tx").textContent = b.text;
   card.querySelector(".more").onclick = e => {
     e.stopPropagation();
@@ -374,20 +482,25 @@ function karaokeStep() {
 requestAnimationFrame(karaokeStep);
 
 /* ---------- playback ---------- */
-const prefetch = (sid, idx) =>   // start server-side synthesis now, discard result
-  fetch(`/api/timings?session=${sid}&idx=${idx}&voice=${$("voice").value}&rate=10`).catch(() => {});
+const prefetch = (sid, idx) => {  // start server-side synthesis now, discard result
+  const b = S[sid]?.blocks[idx];
+  if (!b) return;
+  fetch(`/api/timings?session=${sid}&idx=${idx}&voice=${voiceFor(b.kind)}&rate=10`)
+    .catch(() => {});
+};
 
 async function play(sid, idx) {
   const st = S[sid];
   if (!st || idx < 0 || idx >= st.blocks.length) return;
+  const b = st.blocks[idx];
   const key = `${sid}:${idx}`;
   if (pendingKey === key) return;           // this block is already synthesizing
   const my = ++playToken;
   pendingKey = key;
   const card = cardEl(sid, idx);
   card?.classList.add("loading");
-  setStatus(`synthesizing thought ${idx + 1}…`);
-  const qs = `session=${sid}&idx=${idx}&voice=${$("voice").value}&rate=10`;
+  setStatus(`synthesizing ${nounOf(b.kind)} ${idx + 1}…`);
+  const qs = `session=${sid}&idx=${idx}&voice=${voiceFor(b.kind)}&rate=10`;
   let timings = [];
   try {
     timings = await j(`/api/timings?${qs}`);
@@ -406,14 +519,16 @@ async function play(sid, idx) {
   audio.src = `/api/audio?${qs}`;
   audio.playbackRate = rate;
   audio.play().catch(() => setStatus("click ▶ once to allow audio"));
-  setStatus(`thought ${idx + 1} of ${st.blocks.length}`);
+  const label = `${nounOf(b.kind)} ${idx + 1} of ${st.blocks.length}`;
+  setStatus(label);
   if ("mediaSession" in navigator) {
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: `Thought ${idx + 1} of ${st.blocks.length}`,
+      title: label[0].toUpperCase() + label.slice(1),
       artist: titleOf(sid), album: "Thinking Narrator",
     });
   }
-  if (idx + 1 < st.blocks.length) prefetch(sid, idx + 1);
+  const nxt = step(sid, idx + 1, 1);
+  if (nxt >= 0) prefetch(sid, nxt);
 }
 
 function pump() {
@@ -426,9 +541,12 @@ function pump() {
 audio.onended = () => {
   lamp.classList.remove("on"); $("pp").textContent = "▶"; updateChrome();
   if ($("through").checked && playing.sid !== null) {
-    const st = S[playing.sid], nxt = playing.idx + 1;
-    queue = queue.filter(q => !(q.sid === playing.sid && q.idx <= nxt));
-    if (st && nxt < st.blocks.length) { play(playing.sid, nxt); return; }
+    const nxt = step(playing.sid, playing.idx + 1, 1);
+    if (nxt >= 0) {
+      queue = queue.filter(q => !(q.sid === playing.sid && q.idx <= nxt));
+      play(playing.sid, nxt);
+      return;
+    }
   }
   pump();
 };
@@ -445,17 +563,26 @@ audio.ontimeupdate = () => {
     card.querySelector(".rail").style.setProperty("--p", (audio.currentTime / audio.duration * 100) + "%");
 };
 
+const playNewest = () => {
+  if (!selId) return;
+  const i = newestVisible(selId);
+  if (i >= 0) play(selId, i);
+};
 $("pp").onclick = () => {
   if (audio.paused) {
-    if (audio.src) audio.play();
-    else if (selId && S[selId]?.blocks.length) play(selId, S[selId].blocks.length - 1);
+    if (audio.src) audio.play(); else playNewest();
   } else audio.pause();
 };
 $("back").onclick = () => { audio.currentTime = Math.max(0, audio.currentTime - 10); };
-$("prevB").onclick = () => { if (playing.sid !== null) play(playing.sid, playing.idx - 1); };
+$("prevB").onclick = () => {
+  if (playing.sid === null) return;
+  const i = step(playing.sid, playing.idx - 1, -1);
+  if (i >= 0) play(playing.sid, i);
+};
 $("nextB").onclick = () => {
-  if (playing.sid !== null) play(playing.sid, playing.idx + 1);
-  else if (selId && S[selId]?.blocks.length) play(selId, S[selId].blocks.length - 1);
+  if (playing.sid === null) { playNewest(); return; }
+  const i = step(playing.sid, playing.idx + 1, 1);
+  if (i >= 0) play(playing.sid, i);
 };
 $("seek").onpointerdown = () => seeking = true;
 $("seek").onpointerup = () => seeking = false;
@@ -464,6 +591,10 @@ $("seek").oninput = () => {
 };
 $("vol").oninput = () => { audio.volume = parseFloat($("vol").value); savePrefs(); };
 $("voice").onchange = savePrefs;
+$("voiceR").onchange = savePrefs;
+$("sessSel").onchange = () => {
+  $("follow").checked = false; savePrefs(); select($("sessSel").value);
+};
 $("speed").onclick = e => {
   const b = e.target.closest("button");
   if (!b) return;
@@ -522,17 +653,19 @@ async function tick() {
         const pinned = main.scrollTop + main.clientHeight >= main.scrollHeight - 90;
         for (const b of fresh) { st.blocks.push(b); addCard(selId, b); }
         st.everLoaded = true;
-        $("empty").style.display = "none";
+        updateEmpty();
         if (firstLoad || pinned) main.scrollTop = main.scrollHeight;
         if ($("autoplay").checked) {
           const cur = sessions.find(s => s.id === selId);
           if (firstLoad) {
-            if (cur && Date.now() / 1000 - cur.mtime < 30) {
-              queue.push({ sid: selId, idx: st.blocks.length - 1 });
-              prefetch(selId, st.blocks.length - 1);
+            const i = newestVisible(selId);
+            if (cur && i >= 0 && Date.now() / 1000 - cur.mtime < 30) {
+              queue.push({ sid: selId, idx: i });
+              prefetch(selId, i);
             }
           } else {
             for (const b of fresh) {   // synthesize on arrival, not on turn-to-play
+              if (!kindOK(b.kind)) continue;
               queue.push({ sid: selId, idx: b.idx });
               prefetch(selId, b.idx);
             }

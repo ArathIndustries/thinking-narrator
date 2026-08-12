@@ -40,6 +40,18 @@ Server binds 127.0.0.1 exclusively. Repo pushed private under ArathIndustries; f
 4. **Heartbeat/fail-loud:** user-launched (not scheduled), so no heartbeat; fail-loud = server asserts surface as HTTP 500s shown in the player status line, CLI asserts stop with messages, cache prune and count warmer print warnings on error rather than dying silently.
 5. **Acid test:** BACKLOG task due 2026-08-02 — one week of real use, friction logged; ROADMAP Phase 5 is gated on it.
 
+## 2026-08-12 — D10: Replies are a second block *kind*, not a second feed
+
+Arath asked for the printed responses to be readable too, switchable between thoughts / replies / both. Implemented as one append-only list per session carrying both kinds tagged `kind`, rather than two parallel lists. Reasons: the interleaving (think → print → think) is the thing worth listening to and only a single ordered list preserves it; `idx` stays a stable handle for the audio cache and `?after=` paging; mode becomes a pure client-side filter, so switching is instant and the server stays dumb. Cost, accepted: `idx` no longer means "nth thinking block", so every `wb2|` cache entry is potentially mismapped — cache key bumped to `wb3|` with kind included. Default is **both**, on all three entry points.
+
+## 2026-08-12 — D11: Markdown is stripped for speech, but no word is ever invented
+
+Printed replies are markdown; read literally they are noise ("asterisk asterisk", table pipes, whole code blocks). `strip_markdown` deletes markers and keeps their words. The binding constraint is D6: the karaoke aligner matches each spoken word forward through the **raw** text with `indexOf`, so any *added* word would have no counterpart and would drag the cursor to a false match. Hence fenced code is dropped silently rather than announced. Verified: on fixture and live blocks, 100% of spoken words align (7/7 on a reply mixing prose and a code fence). Single exception, deliberate: a reply that is *only* code has no speakable prose, so `to_speech` returns the marker "Code block." — those words are absent from the card, produce zero spans, and the highlight stays correctly inert.
+
+## 2026-08-12 — D12: The "app" is two real windows, not an embedded terminal
+
+Arath asked to interface with Claude Code in a terminal with the narrator alongside it. Shipped as `launch-app.bat`: Windows Terminal running `claude` on the left, the narrator right in a chromeless Edge app window using a new compact `?panel=1` layout. Rejected for now: embedding a terminal in the page (ConPTY/pywinpty + xterm.js), which would make it one window but adds two dependencies and re-implements a terminal Windows already provides. Revisit if daily use shows the two-window split is the friction. Placement uses `SetWindowPos` after launch and a dedicated `--user-data-dir` — both measured requirements, see ROUTING gotchas.
+
 ## 2026-07-26 — D9: Blog rulings (Arath, interactive)
 
 Repo flips public **the day the blog post ships** (not before, not never). Post angle: **"I made Claude Code think out loud"** — demo-first story ending at the karaoke player following live reasoning. Venue: **the portfolio site (arath.site)**, pending a page-order/IA review Arath opened in the same ruling session.

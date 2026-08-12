@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Live audio narrator for Claude Code thinking blocks.
+"""Live audio narrator for Claude Code.
 
 Tails every Claude Code session transcript (JSONL under ~/.claude/projects/)
-concurrently and speaks each new `thinking` content block through Windows
-SAPI. Concurrent chats are distinguished by voice (installed SAPI voices are
+concurrently and speaks each new narratable block through Windows SAPI. Two
+kinds are narratable and `--kinds` selects them: `thinking` (the reasoning
+the CLI lets you expand) and `text` (the reply printed to the terminal).
+Concurrent chats are distinguished by voice (installed SAPI voices are
 assigned round-robin in order of first activity) and, when more than one
 session is active, a spoken "Session N" prefix.
+
+Also the shared core for app.py and server.py: Tail, extract_blocks,
+to_speech, session_title, speak.
 
 Measured behavior (2026-07-26, this machine): Claude Code appends each
 assistant message segment to the transcript roughly when that segment's
@@ -82,17 +87,41 @@ def session_title(path):
     return fallback or os.path.basename(path)
 
 
-def extract_thinking(rec, include_agents):
+KINDS = ("thinking", "text")
+
+
+def extract_blocks(rec, include_agents, kinds=KINDS):
+    """Yield (kind, text) pairs from one transcript record, in CLI order.
+
+    kind "thinking" = a reasoning block (what the CLI expands); kind "text" =
+    the assistant's printed reply. Both live in the same `message.content`
+    list, interleaved with `tool_use` blocks, in the order they were shown.
+
+    The `type == "assistant"` guard is load-bearing for "text": user records
+    carry text content too (the prompts), and narrating those back would echo
+    Arath to himself. Thinking blocks only ever appear on assistant records,
+    so the guard costs nothing there.
+    """
     if rec.get("isSidechain") and not include_agents:
+        return []
+    if rec.get("type") != "assistant":
         return []
     msg = rec.get("message")
     if not isinstance(msg, dict) or not isinstance(msg.get("content"), list):
         return []
-    return [
-        b["thinking"]
-        for b in msg["content"]
-        if isinstance(b, dict) and b.get("type") == "thinking" and b.get("thinking")
-    ]
+    out = []
+    for b in msg["content"]:
+        if not isinstance(b, dict):
+            continue
+        t = b.get("type")
+        if t in kinds and isinstance(b.get(t), str) and b[t].strip():
+            out.append((t, b[t]))
+    return out
+
+
+def extract_thinking(rec, include_agents):
+    """Thinking blocks only — kept for callers that never wanted replies."""
+    return [t for kind, t in extract_blocks(rec, include_agents, ("thinking",))]
 
 
 class Tail:
@@ -133,6 +162,48 @@ def clean(text, max_chars):
     if max_chars and len(text) > max_chars:
         text = text[:max_chars].rsplit(" ", 1)[0] + " ... truncated"
     return text
+
+
+CODE_FENCE = re.compile(r"^[ \t]*(```|~~~).*?(?:^[ \t]*\1[ \t]*$|\Z)", re.S | re.M)
+
+
+def strip_markdown(text):
+    """Markdown → speakable prose, for printed replies.
+
+    Two rules govern every substitution here, because the karaoke aligner
+    (D6) matches each spoken word forward through the *raw* text with
+    indexOf: (1) markers are deleted but their words are kept, so every
+    spoken word still exists in the card; (2) nothing is ever *added* — an
+    injected word like "code block" would have no counterpart in the raw
+    text and would drag the highlight cursor to a false match. Fenced code
+    is therefore dropped silently; the card still shows it.
+    """
+    text = CODE_FENCE.sub(" ", text)
+    text = re.sub(r"^ {0,3}#{1,6} +", "", text, flags=re.M)           # headings
+    text = re.sub(r"^ *>+ ?", "", text, flags=re.M)                   # quotes
+    text = re.sub(r"^ *([-*+]|\d+[.)]) +", "", text, flags=re.M)      # list markers
+    text = re.sub(r"^ *[-*_]{3,} *$", " ", text, flags=re.M)          # rules
+    text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", text)            # links/images
+    text = re.sub(r"^ *\|[-: |]+\| *$", " ", text, flags=re.M)        # table rules
+    text = text.replace("|", ", ")                                    # table cells
+    text = re.sub(r"\*\*|~~|\*", "", text)                            # emphasis
+    return text
+    # NB: single "_" is deliberately left alone — snake_case identifiers are
+    # far more common in this corpus than _italics_.
+
+
+def to_speech(text, kind="thinking", max_chars=0):
+    """The exact string handed to the synthesizer, per block kind.
+
+    Never returns "": a reply that is nothing but a fenced code block cleans
+    to empty, and every engine here treats empty input as a hard error
+    (edge-tts returns zero bytes; SAPI speaks nothing). The marker keeps the
+    block audible and countable. It lives here rather than in each caller so
+    all three entry points behave the same.
+    """
+    if kind == "text":
+        text = strip_markdown(text)
+    return clean(text, max_chars) or "Code block."
 
 
 def speak(text, rate, voice=None):
@@ -176,6 +247,8 @@ def main():
                     help="speak every block; default drops backlog, speaks newest only")
     ap.add_argument("--include-agents", action="store_true",
                     help="also narrate subagent (sidechain) thinking")
+    ap.add_argument("--kinds", choices=("thinking", "text", "both"), default="both",
+                    help="read thinking blocks, printed replies, or both (default)")
     ap.add_argument("--rate", type=int, default=2,
                     help="SAPI speech rate, -10..10 (default 2)")
     ap.add_argument("--max-chars", type=int, default=0,
@@ -190,6 +263,7 @@ def main():
             stream.reconfigure(encoding="utf-8", errors="replace",
                                line_buffering=True)
 
+    kinds = KINDS if args.kinds == "both" else (args.kinds,)
     voices = list_voices()
     q = queue.Queue()
 
@@ -214,9 +288,10 @@ def main():
                 except OSError:
                     del tails[path]
                     continue
-                blocks = [(rec.get("timestamp", ""), t)
+                blocks = [(rec.get("timestamp", ""), kind, t)
                           for rec in recs
-                          for t in extract_thinking(rec, args.include_agents)]
+                          for kind, t in extract_blocks(rec, args.include_agents,
+                                                        kinds)]
                 if not blocks:
                     continue
                 if path not in meta:
@@ -227,8 +302,8 @@ def main():
                     print(f"[narrator] session {num} = \"{meta[path]['label']}\" "
                           f"({voice or 'default voice'}) — {os.path.basename(path)}")
                 m = meta[path]
-                for ts, t in blocks:
-                    q.put((ts, m["num"], m["voice"], t))
+                for ts, kind, t in blocks:
+                    q.put((ts, m["num"], m["voice"], kind, t))
             if args.once:
                 q.put(None)
                 return
@@ -261,11 +336,12 @@ def main():
                         item = nxt  # keep only the newest queued block
                 except queue.Empty:
                     pass
-            ts, num, voice, text = item
+            ts, num, voice, kind, text = item
             sessions_seen.add(num)
-            text = clean(text, args.max_chars)
+            text = to_speech(text, kind, args.max_chars)
             spoken += 1
-            print(f"[{ts}] S{num} {text[:100]}{'...' if len(text) > 100 else ''}")
+            tag = "reply" if kind == "text" else "thought"
+            print(f"[{ts}] S{num} {tag}: {text[:100]}{'...' if len(text) > 100 else ''}")
             if not args.dry_run:
                 spoken_text = f"Session {num}. {text}" if len(sessions_seen) > 1 else text
                 speak(spoken_text, args.rate, voice)

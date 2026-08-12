@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 """Web UI for the thinking narrator.
 
-Serves a localhost player page: session list, scrollable thought log, and a
-native browser audio player — which is what provides pause, scrubbing
-(rewind), volume, and speed controls. The server tails transcripts, extracts
-thinking blocks, and synthesizes per-block MP3s (edge-tts, cached in %TEMP%).
+Serves a localhost player page: session list, scrollable log, and a native
+browser audio player — which is what provides pause, scrubbing (rewind),
+volume, and speed controls. The server tails transcripts, extracts both
+narratable block kinds — `thinking` (reasoning) and `text` (the printed
+reply) — and synthesizes per-block MP3s (edge-tts, cached in %TEMP%). Which
+kinds actually play is a client-side mode; the server always serves both.
 
 Run: py server.py    → opens http://127.0.0.1:8917 in the default browser.
+     py server.py --panel  → compact sidecar layout, for docking beside a
+                             terminal (see launch-app.bat).
 
 Endpoints:
   GET /                      player page
   GET /api/sessions          recent sessions, newest first
-  GET /api/blocks?session=&after=   thinking blocks (idx, ts, text)
+  GET /api/blocks?session=&after=   blocks (idx, kind, ts, text)
   GET /api/audio?session=&idx=&voice=&rate=   MP3 for one block (Range OK)
+  GET /api/timings?session=&idx=&voice=&rate= word timestamps for karaoke
 """
 
 import argparse
@@ -103,13 +108,19 @@ def prune_cache():
 
 
 def get_blocks(path):
+    """All narratable blocks for one session, thinking and replies together.
+
+    One list, in transcript order, each tagged with its kind — the client
+    filters by mode. Keeping both kinds in a single append-only list is what
+    lets `idx` stay a stable handle for the audio cache and `?after=`.
+    """
     with LOCK:
         st = STORE.get(path)
         if st is None:
             st = STORE[path] = {"tail": narrate.Tail(path, True), "blocks": []}
         for rec in st["tail"].read_new():
-            for t in narrate.extract_thinking(rec, ARGS.include_agents):
-                st["blocks"].append({"idx": len(st["blocks"]),
+            for kind, t in narrate.extract_blocks(rec, ARGS.include_agents):
+                st["blocks"].append({"idx": len(st["blocks"]), "kind": kind,
                                      "ts": rec.get("timestamp", ""), "text": t})
         return list(st["blocks"])
 
@@ -127,8 +138,12 @@ def synth(sid, idx, voice, rate):
     assert path, f"unknown session {sid!r}"
     blocks = get_blocks(path)
     assert 0 <= idx < len(blocks), f"block {idx} out of range (have {len(blocks)})"
-    text = narrate.clean(blocks[idx]["text"], 0)
-    key = hashlib.md5(f"wb2|{sid}|{idx}|{voice}|{rate}|{len(text)}".encode()).hexdigest()
+    blk = blocks[idx]
+    text = narrate.to_speech(blk["text"], blk["kind"], 0)   # never "" — see to_speech
+    # wb3: idx no longer means "nth thinking block" (replies share the list),
+    # so every wb2 entry is potentially mismapped — bump, don't reuse.
+    key = hashlib.md5(
+        f"wb3|{sid}|{idx}|{blk['kind']}|{voice}|{rate}|{len(text)}".encode()).hexdigest()
     mp3 = os.path.join(CACHE, key + ".mp3")
     tim = os.path.join(CACHE, key + ".json")
     with LOCK:
@@ -241,12 +256,15 @@ def main():
     ap.add_argument("--limit", type=int, default=20, help="sessions listed")
     ap.add_argument("--include-agents", action="store_true")
     ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--panel", action="store_true",
+                    help="open the compact sidecar layout, for docking beside "
+                         "a terminal (equivalent to visiting /?panel=1)")
     ap.add_argument("--cache-mb", type=int, default=200,
                     help="MP3 cache cap in MB, oldest evicted (default 200)")
     ARGS = ap.parse_args()
 
     os.makedirs(CACHE, exist_ok=True)
-    url = f"http://127.0.0.1:{ARGS.port}"
+    url = f"http://127.0.0.1:{ARGS.port}" + ("/?panel=1" if ARGS.panel else "")
     # Windows: SO_REUSEADDR (set by http.server) lets a second bind succeed on
     # a live port, so OSError never fires — probe with a connect instead.
     with socket.socket() as probe:

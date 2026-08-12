@@ -24,11 +24,16 @@ For the full spec, see `C:\Users\Arath\OneDrive\Claude Memory\CONVENTIONS.md` §
 - Windows + `http.server`: `SO_REUSEADDR` lets a second bind on a live port succeed silently — port-in-use must be detected with a connect probe, never by catching `OSError` on bind.
 - Testing from Git Bash: `$variables` inside double-quoted PowerShell one-liners get eaten by bash — use the PowerShell tool or Python `subprocess` list-args.
 - Force-killing a Python process with redirected stdout loses the buffer; both entry points set `line_buffering=True`, keep it.
-- MP3 + timings cache key embeds a version prefix (`wb2|`); bump it whenever synthesis output changes shape, or stale cache entries serve.
+- MP3 + timings cache key embeds a version prefix (now `wb3|`, was `wb2|`); bump it whenever synthesis output changes shape **or whenever `idx` changes meaning**, or stale entries serve the wrong audio.
+- `user` transcript records contain `text` content blocks (the prompts). Reply extraction must filter `rec["type"] == "assistant"` or the narrator reads Arath's own prompts back to him. Thinking-only extraction never needed this guard, so it is easy to omit.
+- `to_speech()` never returns `""` — a reply that is only a fenced code block cleans to empty, and edge-tts returns zero bytes for empty input (SAPI speaks nothing). The "Code block." fallback lives in `to_speech`, not in the callers; putting it in `server.py` alone left both CLIs silently mute on those blocks (found 2026-08-12).
+- Launching a chromeless Edge app window: pass `--user-data-dir`, or an already-running Edge opens the window inside an **existing** process — no new PID, no new `MainWindowHandle`, so any placement poll times out (measured 2026-08-12). Position with `SetWindowPos` after launch; `--window-size`/`--window-position` alone are unreliable.
+- Any spoken word must exist in the raw block text, in order — the karaoke aligner (D6) scans forward with `indexOf`. Never add words to speech text; only delete markers.
 
 ## Key file paths
 
 - Web player (main entrance): `server.py` + `index.html`, launched by `launch.bat` / desktop shortcut "Thinking Narrator"
+- Side-by-side app layout: `launch-app.bat` → `launch-app.ps1` (terminal left, `?panel=1` narrator right)
 - CLI single-chat app: `app.py`; ambient multi-chat watcher: `narrate.py` (shared core Tail/extract/clean/speak lives in `narrate.py`)
 - Data source: `~\.claude\projects\<slug>\<session>.jsonl` (read-only tail)
 - MP3/timings cache: `%TEMP%\thinking-narrator-cache\` (hourly eviction, `--cache-mb`, default 200)

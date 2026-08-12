@@ -26,6 +26,7 @@ was about an hour; the rest of the day was making it *good*.
 | v6 | Karaoke word highlighting from WordBoundary timestamps; darker/wider UI; custom transport bar. |
 | v7 | Scroll-to-newest with bottom-pinning; "synthesizing…" states; double-click + server race guards; per-session cached views; "thinking…" indicator. |
 | v8 | Comfort pack: media keys, play-through + prefetch, keyboard shortcuts, unread badges, tab state, jump-to-newest, cache cap, desktop launcher. |
+| v9 | (2026-08-12, second sitting) Reads the **printed replies** too: read mode thoughts/replies/both, per-kind voices and accents, markdown→speech, compact panel layout + side-by-side app launcher. |
 
 ## Measured facts worth publishing
 
@@ -69,6 +70,45 @@ was about an hour; the rest of the day was making it *good*.
 6. **Hand-written test fixture had malformed JSON** (stray `]`) → would
    have tested the parse-warning path instead of the sidechain filter →
    caught on re-read before running; fixed → filter test meaningful.
+
+### v9 (2026-08-12)
+
+7. **A code-only reply printed as an empty line and would have been mute** →
+   the "Code block." fallback was written into `server.py`, so `app.py` and
+   `narrate.py` handed `""` to the synthesizer (edge-tts returns zero bytes;
+   SAPI says nothing) → moved the fallback into `to_speech()`, the shared
+   core, and deleted it from the caller → all three entry points now speak
+   the marker; a `to_speech` never returns empty check covers every kind.
+   *The bug was one guard in one of three call sites — the fix was to make
+   the call sites unable to differ.*
+8. **The narrator window was never positioned; the poll timed out** → an
+   already-running Edge opens an `--app` window inside an **existing**
+   process, so PID-diffing for a new `MainWindowHandle` can never succeed →
+   launch with a dedicated `--user-data-dir` (forces a new process) and
+   position with `SetWindowPos` → measured 614×1040 at 1306,0 on the next
+   run. Placement flags alone (`--window-size`) are advisory; the Win32 call
+   is not.
+9. **The first alignment test failed on a passing feature** → the test split
+   spoken text on whitespace, so `real,` counted as missing from raw
+   `**real**,` — but edge-tts emits WordBoundary events for *words*, not
+   word+punctuation → tokenize the assertion the way the aligner is actually
+   fed (`\w+`) → 100% alignment, and the sharper test then caught the real
+   invariant worth stating: never *add* a word to speech text.
+
+## v9 design lessons
+
+- **The scope was in the daily use, not the roadmap.** ROADMAP Phase 5 listed
+  per-session voice pinning, offline TTS, PWA install. What using it actually
+  produced was "read the replies too" — which no version of the plan had.
+  Re-dating the task and workshopping scope beat running the old acid test.
+- **One list, tagged, beats two lists.** Replies could have been a parallel
+  feed; putting both kinds in one ordered list is what preserves the
+  think→print rhythm, keeps `idx` a stable cache handle, and makes the mode
+  switch a CSS class instead of a re-render.
+- **A downstream invariant constrains an upstream feature.** Markdown
+  stripping looked free until the karaoke aligner's forward `indexOf` made
+  "never invent a word" a hard rule — which is why fenced code is dropped
+  silently rather than announced.
 
 ## Design lessons
 

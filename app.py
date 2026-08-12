@@ -111,10 +111,11 @@ def edge_synth(text, voice, speed):
     return mp3
 
 
-def speak_block(text, args):
+def speak_block(text, args, voice=None):
+    voice = voice or args.voice
     if args.engine in ("auto", "edge") and HAVE_EDGE:
         try:
-            mp3 = edge_synth(text, args.voice, args.speed)
+            mp3 = edge_synth(text, voice, args.speed)
         except Exception as e:
             print(f"[warn] edge-tts failed ({e}); falling back to SAPI",
                   file=sys.stderr)
@@ -124,7 +125,7 @@ def speak_block(text, args):
             finally:
                 os.unlink(mp3)
     sapi_rate = max(-10, min(10, round(args.speed / 5)))
-    sapi_voice = args.voice if args.engine == "sapi" else None
+    sapi_voice = voice if args.engine == "sapi" else None
     narrate.speak(text, sapi_rate, sapi_voice)
     return "done"
 
@@ -214,9 +215,10 @@ def prompt_voice(args):
 # ---------- following ----------
 
 def collect(tail, args):
-    return [(rec.get("timestamp", ""), t)
+    return [(rec.get("timestamp", ""), kind, t)
             for rec in tail.read_new()
-            for t in narrate.extract_thinking(rec, args.include_agents)]
+            for kind, t in narrate.extract_blocks(rec, args.include_agents,
+                                                  args.kind_tuple)]
 
 
 class Follower:
@@ -301,11 +303,14 @@ def parse_mode(s):
     raise argparse.ArgumentTypeError("mode must be live, all, or last:N")
 
 
-def say(ts, text, args):
-    text = narrate.clean(text, args.max_chars)
-    print(f"[{ts[11:19] or '--:--:--'}] {text[:100]}{'...' if len(text) > 100 else ''}")
+def say(ts, kind, text, args):
+    text = narrate.to_speech(text, kind, args.max_chars)
+    tag = "reply" if kind == "text" else "thought"
+    print(f"[{ts[11:19] or '--:--:--'}] {tag}: "
+          f"{text[:100]}{'...' if len(text) > 100 else ''}")
     if not args.dry_run:
-        speak_block(text, args)
+        speak_block(text, args,
+                    args.voice_reply if kind == "text" else args.voice)
 
 
 def main():
@@ -318,6 +323,11 @@ def main():
     ap.add_argument("--mode", type=parse_mode,
                     help="live | all | last:N (history replay needs --session/--pick)")
     ap.add_argument("--voice", help="edge voice name (see --list-voices)")
+    ap.add_argument("--kinds", choices=("thinking", "text", "both"), default="both",
+                    help="read thinking blocks, printed replies, or both (default)")
+    ap.add_argument("--voice-reply",
+                    help="separate voice for printed replies, so thought and "
+                         "reply are distinguishable by ear (default: --voice)")
     ap.add_argument("--engine", choices=("auto", "edge", "sapi"), default="auto")
     ap.add_argument("--speed", type=int, default=10,
                     help="speech rate in percent for edge (default +10)")
@@ -333,6 +343,7 @@ def main():
                     help="exit after replay instead of following live")
     ap.add_argument("--list-voices", action="store_true")
     args = ap.parse_args()
+    args.kind_tuple = narrate.KINDS if args.kinds == "both" else (args.kinds,)
 
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -376,8 +387,12 @@ def main():
                 args.voice = prompt_voice(args)
             else:
                 args.voice = DEFAULT_VOICE
+        args.voice_reply = args.voice_reply or args.voice
         engine = "edge-tts" if (args.engine != "sapi" and HAVE_EDGE) else "SAPI"
         print(f"[app] engine: {engine}, voice: {args.voice}, speed: {args.speed:+d}%")
+        print(f"[app] reading: {args.kinds}"
+              + (f", reply voice: {args.voice_reply}"
+                 if args.voice_reply != args.voice else ""))
 
         follower = Follower(args.root, args)
         if pinned:
@@ -387,8 +402,8 @@ def main():
                 if mode == "last":
                     backlog = backlog[-n:]
                 print(f"[app] replaying {len(backlog)} block(s)")
-                for ts, text in backlog:
-                    say(ts, text, args)
+                for ts, kind, text in backlog:
+                    say(ts, kind, text, args)
                 if args.once:
                     print("[app] done")
                     return
@@ -404,8 +419,8 @@ def main():
             blocks = follower.poll()
             if args.newest_only and len(blocks) > 1:
                 blocks = blocks[-1:]
-            for ts, text in blocks:
-                say(ts, text, args)
+            for ts, kind, text in blocks:
+                say(ts, kind, text, args)
             time.sleep(args.poll)
     except (Quit, KeyboardInterrupt):
         print("\n[app] stopped")
