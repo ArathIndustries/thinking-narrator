@@ -24,6 +24,7 @@ System.Speech call per utterance (blocking, which serializes playback).
 """
 
 import argparse
+import datetime
 import glob
 import json
 import os
@@ -54,6 +55,24 @@ def list_voices():
         print(f"[warn] voice enumeration failed, using default voice: {e}",
               file=sys.stderr)
         return []
+
+
+def local_clock(ts):
+    """Transcript timestamp -> local HH:MM:SS.
+
+    The transcript stores UTC ISO ('2026-08-12T15:05:54.479Z'). Slicing the
+    string (the original approach here) displays UTC, which on this machine
+    reads five hours ahead and silently shifts the day-of. Parse and convert.
+    """
+    if not ts:
+        return "--:--:--"
+    try:
+        d = datetime.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except ValueError:
+        return str(ts)[11:19] or "--:--:--"
+    if d.tzinfo is None:                      # naive: assume UTC, as written
+        d = d.replace(tzinfo=datetime.timezone.utc)
+    return d.astimezone().strftime("%H:%M:%S")
 
 
 def session_title(path):
@@ -428,7 +447,8 @@ def main():
             text = to_speech(text, kind, args.max_chars)
             spoken += 1
             tag = {"text": "reply", "tool": "tool"}.get(kind, "thought")
-            print(f"[{ts}] S{num} {tag}: {text[:100]}{'...' if len(text) > 100 else ''}")
+            print(f"[{local_clock(ts)}] S{num} {tag}: "
+                  f"{text[:100]}{'...' if len(text) > 100 else ''}")
             if not args.dry_run:
                 spoken_text = f"Session {num}. {text}" if len(sessions_seen) > 1 else text
                 speak(spoken_text, args.rate, voice)

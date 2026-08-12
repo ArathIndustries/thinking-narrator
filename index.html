@@ -286,6 +286,22 @@ const j = async url => {
 };
 const setStatus = t => statusEl.textContent = t;
 const fmt = s => isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "0:00";
+
+/* Transcript timestamps are UTC ISO ("2026-08-12T15:05:54.479Z"). Slicing
+   characters out of that string shows UTC — five hours ahead here. Parse and
+   render local instead. Blocks from an earlier day carry the date, because a
+   session that runs past midnight otherwise shows two days as one. */
+const p2 = n => String(n).padStart(2, "0");
+function clock(ts) {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  if (isNaN(d)) return "—";
+  const hms = `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+  const now = new Date();
+  const sameDay = d.getFullYear() === now.getFullYear()
+               && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  return sameDay ? hms : `${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${hms}`;
+}
 const cardEl = (sid, idx) => $(`blk-${sid}-${idx}`);
 const titleOf = sid => sessions.find(s => s.id === sid)?.title || "Thinking Narrator";
 
@@ -444,7 +460,7 @@ function addCard(sid, b) {
   card.className = `card k-${b.kind}`; card.id = `blk-${sid}-${b.idx}`;
   card.innerHTML = `<div class="rail"></div><div class="ts"><span class="kind"></span><span class="when"></span></div><div class="tx"></div><button class="more">expand</button>`;
   card.querySelector(".kind").textContent = nounOf(b.kind);
-  card.querySelector(".when").textContent = (b.ts || "").slice(11, 19) || "—";
+  card.querySelector(".when").textContent = clock(b.ts);
   card.querySelector(".tx").textContent = b.text;
   card.querySelector(".more").onclick = e => {
     e.stopPropagation();

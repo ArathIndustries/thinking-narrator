@@ -309,7 +309,7 @@ VOICE_ARG = {"text": "voice_reply", "tool": "voice_tool"}
 def say(ts, kind, text, args):
     text = narrate.to_speech(text, kind, args.max_chars)
     tag = {"text": "reply", "tool": "tool"}.get(kind, "thought")
-    print(f"[{ts[11:19] or '--:--:--'}] {tag}: "
+    print(f"[{narrate.local_clock(ts)}] {tag}: "
           f"{text[:100]}{'...' if len(text) > 100 else ''}")
     if not args.dry_run:
         speak_block(text, args, getattr(args, VOICE_ARG.get(kind, ""), None)
