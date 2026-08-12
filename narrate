@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Nest the current Windows Terminal window alongside the narrator (a toggle:
+# close the frame to get the plain terminal back).
+#
+# Git Bash resolves bare names to .exe but not to .cmd, so `narrate` alone
+# missed narrate.cmd. This extensionless shim makes the same command work in
+# Git Bash, PowerShell, and cmd.
+exec powershell -NoProfile -ExecutionPolicy Bypass \
+  -File 'C:\Users\Arath\Automation_Station\Projects\thinking-narrator\app-shell.ps1' "$@"

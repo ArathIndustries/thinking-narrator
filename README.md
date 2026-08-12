@@ -75,8 +75,10 @@ Three entry points:
   `%TEMP%\thinking-narrator-shell.log`.
 
   Needs no dependencies beyond what Windows already has — Windows Terminal,
-  Edge, and WinForms. `narrate.cmd` is installed to `~\.local\bin` (already on
-  PATH, alongside `claude.exe`).
+  Edge, and WinForms. Two shims are installed to `~\.local\bin` (already on
+  PATH, alongside `claude.exe`): `narrate.cmd` for PowerShell and cmd, and an
+  extensionless `narrate` for Git Bash, which resolves a bare name to `.exe`
+  but never to `.cmd`.
 
   **Two-window layout (v9):** `launch-app.bat` is the same arrangement without
   reparenting — two separate windows snapped side by side. Kept as the
