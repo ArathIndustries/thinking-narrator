@@ -140,10 +140,10 @@ def synth(sid, idx, voice, rate):
     assert 0 <= idx < len(blocks), f"block {idx} out of range (have {len(blocks)})"
     blk = blocks[idx]
     text = narrate.to_speech(blk["text"], blk["kind"], 0)   # never "" — see to_speech
-    # wb3: idx no longer means "nth thinking block" (replies share the list),
-    # so every wb2 entry is potentially mismapped — bump, don't reuse.
+    # Bump on every change to what `idx` means: replies joined the list at wb3,
+    # tool calls at wb4. A stale entry would serve the wrong block's audio.
     key = hashlib.md5(
-        f"wb3|{sid}|{idx}|{blk['kind']}|{voice}|{rate}|{len(text)}".encode()).hexdigest()
+        f"wb4|{sid}|{idx}|{blk['kind']}|{voice}|{rate}|{len(text)}".encode()).hexdigest()
     mp3 = os.path.join(CACHE, key + ".mp3")
     tim = os.path.join(CACHE, key + ".json")
     with LOCK:

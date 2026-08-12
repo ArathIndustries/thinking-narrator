@@ -303,14 +303,17 @@ def parse_mode(s):
     raise argparse.ArgumentTypeError("mode must be live, all, or last:N")
 
 
+VOICE_ARG = {"text": "voice_reply", "tool": "voice_tool"}
+
+
 def say(ts, kind, text, args):
     text = narrate.to_speech(text, kind, args.max_chars)
-    tag = "reply" if kind == "text" else "thought"
+    tag = {"text": "reply", "tool": "tool"}.get(kind, "thought")
     print(f"[{ts[11:19] or '--:--:--'}] {tag}: "
           f"{text[:100]}{'...' if len(text) > 100 else ''}")
     if not args.dry_run:
-        speak_block(text, args,
-                    args.voice_reply if kind == "text" else args.voice)
+        speak_block(text, args, getattr(args, VOICE_ARG.get(kind, ""), None)
+                    or args.voice)
 
 
 def main():
@@ -323,11 +326,14 @@ def main():
     ap.add_argument("--mode", type=parse_mode,
                     help="live | all | last:N (history replay needs --session/--pick)")
     ap.add_argument("--voice", help="edge voice name (see --list-voices)")
-    ap.add_argument("--kinds", choices=("thinking", "text", "both"), default="both",
-                    help="read thinking blocks, printed replies, or both (default)")
+    ap.add_argument("--kinds", default="all",
+                    help="comma-separated: thoughts, replies, tools; or all "
+                         "(default) / both (thoughts+replies)")
     ap.add_argument("--voice-reply",
                     help="separate voice for printed replies, so thought and "
                          "reply are distinguishable by ear (default: --voice)")
+    ap.add_argument("--voice-tool",
+                    help="separate voice for tool calls (default: --voice-reply)")
     ap.add_argument("--engine", choices=("auto", "edge", "sapi"), default="auto")
     ap.add_argument("--speed", type=int, default=10,
                     help="speech rate in percent for edge (default +10)")
@@ -343,7 +349,7 @@ def main():
                     help="exit after replay instead of following live")
     ap.add_argument("--list-voices", action="store_true")
     args = ap.parse_args()
-    args.kind_tuple = narrate.KINDS if args.kinds == "both" else (args.kinds,)
+    args.kind_tuple = narrate.parse_kinds(args.kinds)
 
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -388,11 +394,14 @@ def main():
             else:
                 args.voice = DEFAULT_VOICE
         args.voice_reply = args.voice_reply or args.voice
+        args.voice_tool = args.voice_tool or args.voice_reply
         engine = "edge-tts" if (args.engine != "sapi" and HAVE_EDGE) else "SAPI"
         print(f"[app] engine: {engine}, voice: {args.voice}, speed: {args.speed:+d}%")
-        print(f"[app] reading: {args.kinds}"
+        print(f"[app] reading: {', '.join(args.kind_tuple)}"
               + (f", reply voice: {args.voice_reply}"
-                 if args.voice_reply != args.voice else ""))
+                 if args.voice_reply != args.voice else "")
+              + (f", tool voice: {args.voice_tool}"
+                 if args.voice_tool != args.voice_reply else ""))
 
         follower = Follower(args.root, args)
         if pinned:

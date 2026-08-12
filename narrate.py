@@ -87,7 +87,85 @@ def session_title(path):
     return fallback or os.path.basename(path)
 
 
-KINDS = ("thinking", "text")
+KINDS = ("thinking", "text", "tool")
+
+KIND_ALIASES = {
+    "thinking": "thinking", "thoughts": "thinking", "thought": "thinking",
+    "text": "text", "replies": "text", "reply": "text",
+    "tool": "tool", "tools": "tool", "tool_use": "tool",
+}
+
+
+def parse_kinds(s):
+    """'thoughts,tools' -> ('thinking', 'tool'). 'all' and 'both' are shortcuts
+    ('both' keeps its pre-tool meaning: thinking + replies)."""
+    s = (s or "all").strip().lower()
+    if s == "all":
+        return KINDS
+    if s == "both":
+        return ("thinking", "text")
+    out = []
+    for part in s.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        assert part in KIND_ALIASES, \
+            f"unknown kind {part!r}; use any of thoughts, replies, tools (or all/both)"
+        k = KIND_ALIASES[part]
+        if k not in out:
+            out.append(k)
+    assert out, "no kinds selected"
+    return tuple(out)
+
+
+# Spoken form per tool. Gerunds because these are read aloud mid-work
+# ("Editing index.html" scans better than "Edit index.html"), and basenames
+# because a full Windows path is unlistenable read character by character.
+TOOL_VERBS = {
+    "Read": "Reading", "Edit": "Editing", "Write": "Writing",
+    "NotebookEdit": "Editing notebook",
+}
+
+
+def summarize_tool(block):
+    """One short spoken line for a tool call: what it is doing, to what.
+
+    Deliberately not the arguments — the point is glanceable narration of the
+    work, so this reads the one field that identifies the target and drops the
+    rest. Returns "" for a call with nothing worth saying.
+    """
+    name = block.get("name") or "tool"
+    inp = block.get("input")
+    if not isinstance(inp, dict):
+        inp = {}
+
+    def base(p):
+        return os.path.basename(str(p).rstrip("/\\")) or str(p)
+
+    if name in TOOL_VERBS and inp.get("file_path"):
+        return f"{TOOL_VERBS[name]} {base(inp['file_path'])}"
+    if name in ("Bash", "PowerShell"):
+        what = inp.get("description") or inp.get("command") or ""
+        what = re.sub(r"\s+", " ", str(what)).strip()
+        return f"Running: {what[:110]}" if what else "Running a command"
+    if name == "Grep":
+        where = f" in {base(inp['path'])}" if inp.get("path") else ""
+        return f"Searching for {inp.get('pattern', 'a pattern')}{where}"
+    if name == "Glob":
+        return f"Finding files matching {inp.get('pattern', '')}".strip()
+    if name in ("Task", "Agent"):
+        return f"Launching an agent: {inp.get('description', 'subtask')}"
+    if name in ("WebFetch", "WebSearch"):
+        target = inp.get("url") or inp.get("query") or ""
+        m = re.match(r"https?://([^/]+)", str(target))
+        return f"Fetching {m.group(1) if m else str(target)[:80]}"
+    if name == "TodoWrite":
+        return "Updating the task list"
+    if name == "Skill":
+        return f"Loading the {inp.get('skill', '')} skill".replace("  ", " ")
+    if inp.get("file_path"):
+        return f"{name} on {base(inp['file_path'])}"
+    return f"Calling {name}"
 
 
 def extract_blocks(rec, include_agents, kinds=KINDS):
@@ -114,8 +192,16 @@ def extract_blocks(rec, include_agents, kinds=KINDS):
         if not isinstance(b, dict):
             continue
         t = b.get("type")
-        if t in kinds and isinstance(b.get(t), str) and b[t].strip():
-            out.append((t, b[t]))
+        if t in ("thinking", "text"):
+            if t in kinds and isinstance(b.get(t), str) and b[t].strip():
+                out.append((t, b[t]))
+        elif t == "tool_use" and "tool" in kinds:
+            # A tool call has no prose of its own, so the summary IS the block
+            # text: what the card shows is exactly what gets spoken, which
+            # makes word alignment (D6) exact for this kind by construction.
+            s = summarize_tool(b)
+            if s:
+                out.append(("tool", s))
     return out
 
 
@@ -247,8 +333,9 @@ def main():
                     help="speak every block; default drops backlog, speaks newest only")
     ap.add_argument("--include-agents", action="store_true",
                     help="also narrate subagent (sidechain) thinking")
-    ap.add_argument("--kinds", choices=("thinking", "text", "both"), default="both",
-                    help="read thinking blocks, printed replies, or both (default)")
+    ap.add_argument("--kinds", default="all",
+                    help="comma-separated: thoughts, replies, tools; or all "
+                         "(default) / both (thoughts+replies)")
     ap.add_argument("--rate", type=int, default=2,
                     help="SAPI speech rate, -10..10 (default 2)")
     ap.add_argument("--max-chars", type=int, default=0,
@@ -263,7 +350,7 @@ def main():
             stream.reconfigure(encoding="utf-8", errors="replace",
                                line_buffering=True)
 
-    kinds = KINDS if args.kinds == "both" else (args.kinds,)
+    kinds = parse_kinds(args.kinds)
     voices = list_voices()
     q = queue.Queue()
 
@@ -340,7 +427,7 @@ def main():
             sessions_seen.add(num)
             text = to_speech(text, kind, args.max_chars)
             spoken += 1
-            tag = "reply" if kind == "text" else "thought"
+            tag = {"text": "reply", "tool": "tool"}.get(kind, "thought")
             print(f"[{ts}] S{num} {tag}: {text[:100]}{'...' if len(text) > 100 else ''}")
             if not args.dry_run:
                 spoken_text = f"Session {num}. {text}" if len(sessions_seen) > 1 else text

@@ -66,6 +66,16 @@ Two consequences: (1) the script relaunches itself detached, because the window-
 
 `narrate.cmd` installed to `~\.local\bin` (already on PATH next to `claude.exe`) so it is typeable from anywhere.
 
+## 2026-08-12 — D15: Tool calls are the third kind; the switch becomes toggles
+
+Arath: "could I see all of the commands that you run as well? … I don't need everything that you're doing, but I can see when you run a batch script, I can see when you are updating code, when you're writing or reading or analyzing." So `tool_use` blocks become a third narratable kind, and the mode switch becomes **three independent toggles** rather than presets — that reaches all seven combinations he enumerated without enumerating them.
+
+What gets spoken is a **summary, not the arguments**: gerund plus target, from the one input field that identifies what is being acted on ("Editing index.html", "Running: commit and push", "Searching for extract_blocks in narrate.py"). Two rulings inside that: file paths are reduced to basenames, because a full Windows path read character by character is unlistenable; and `Bash` prefers its `description` field over the command, which is what makes the line read like narration instead of shell. A tool call has no prose of its own, so the summary *is* the block text — the card shows exactly what is spoken, which makes D6 word alignment exact for this kind by construction.
+
+Measured calibration: one real session held **198 tool calls to 54 thoughts and 59 replies** — roughly two thirds of all blocks. Tool narration therefore dominates when enabled, and since speech is slower than generation the queue falls behind faster. Recorded rather than designed around; a separate toggle plus a recessive sage accent is the response, and whether the default should include tools is a Phase 5 question for use to answer.
+
+Cache key bumped `wb3|` → `wb4|`: `idx` shifted again when tool blocks joined the list.
+
 ## 2026-07-26 — D9: Blog rulings (Arath, interactive)
 
 Repo flips public **the day the blog post ships** (not before, not never). Post angle: **"I made Claude Code think out loud"** — demo-first story ending at the karaoke player following live reasoning. Venue: **the portfolio site (arath.site)**, pending a page-order/IA review Arath opened in the same ruling session.

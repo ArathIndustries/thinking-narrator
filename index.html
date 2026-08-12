@@ -11,6 +11,9 @@
     /* amber = thinking, sky = printed reply. One accent per block kind, so
        which one is speaking is legible without reading a word of it. */
     --sky: #7FB6D9; --sky-edge: #2E4652; --amber-edge: #4A4335;
+    /* sage = tool call: present but recessive, since these are the most
+       frequent blocks and should not shout over the reasoning. */
+    --sage: #8FBF9F; --sage-edge: #2F4738;
   }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; }
@@ -105,9 +108,25 @@
   .card.k-text .ts::after { color: var(--sky) !important; }
   .card.k-text .tx.karaoke .w.now { background: var(--sky); }
 
-  /* ---- read mode: hide the kind you are not listening to ---- */
-  #log.m-thinking .card.k-text,
-  #log.m-text .card.k-thinking { display: none; }
+  .card.k-tool .kind { border-color: var(--sage-edge); color: var(--sage); }
+  .card.k-tool { padding-top: 8px; padding-bottom: 8px; }
+  .card.k-tool .tx { font: 13.5px/1.5 Consolas, monospace; color: var(--sage);
+                     -webkit-line-clamp: 2; margin-top: 3px; }
+  .card.k-tool.playing { border-color: var(--sage-edge); }
+  .card.k-tool.playing .rail {
+    background: linear-gradient(to bottom, var(--sage) var(--p, 0%), var(--edge) 0);
+  }
+  .card.k-tool.loading .rail { background: var(--sage); }
+  .card.k-tool .ts::after { color: var(--sage) !important; }
+  .card.k-tool .tx.karaoke .w.now { background: var(--sage); }
+  .card.k-tool .more { display: none; }   /* one line; nothing to expand */
+
+  /* ---- read mode: independent per-kind toggles, so every combination of
+         thoughts / replies / tools is reachable ---- */
+  #log .card { display: none; }
+  #log.k-thinking .card.k-thinking,
+  #log.k-text .card.k-text,
+  #log.k-tool .card.k-tool { display: block; }
 
   #gen { display: none; color: var(--dim); font: italic 13.5px Georgia, serif;
          padding: 2px 4px 10px; }
@@ -204,14 +223,25 @@
   <span id="time">0:00 / 0:00</span>
   <input type="range" id="seek" min="0" max="1000" value="0">
   <span class="vol">vol <input type="range" id="vol" min="0" max="1" step="0.01" value="1" title="Volume (m mutes)"></span>
-  <span class="segs" id="mode" title="What gets read aloud">
-    <button data-m="thinking">Thoughts</button><button data-m="text">Replies</button><button data-m="both" class="act">Both</button>
+  <span class="segs" id="mode" title="What gets read aloud — toggle each independently">
+    <button data-k="thinking">Thoughts</button><button data-k="text">Replies</button><button data-k="tool">Tools</button>
   </span>
   <span class="lbl">thought</span>
   <select id="voice" title="Voice for thinking blocks">
     <option value="en-US-ChristopherNeural">Christopher (US, calm)</option>
     <option value="en-US-EricNeural">Eric (US, mellow)</option>
     <option value="en-US-GuyNeural">Guy (US, upbeat)</option>
+    <option value="en-US-AriaNeural">Aria (US, expressive)</option>
+    <option value="en-US-JennyNeural">Jenny (US, warm)</option>
+    <option value="en-US-MichelleNeural">Michelle (US, even)</option>
+    <option value="en-GB-RyanNeural">Ryan (UK)</option>
+    <option value="en-GB-SoniaNeural">Sonia (UK)</option>
+  </select>
+  <span class="lbl">tool</span>
+  <select id="voiceT" title="Voice for tool calls">
+    <option value="en-US-ChristopherNeural">Christopher (US, calm)</option>
+    <option value="en-US-EricNeural">Eric (US, mellow)</option>
+    <option value="en-US-GuyNeural" selected>Guy (US, upbeat)</option>
     <option value="en-US-AriaNeural">Aria (US, expressive)</option>
     <option value="en-US-JennyNeural">Jenny (US, warm)</option>
     <option value="en-US-MichelleNeural">Michelle (US, even)</option>
@@ -277,25 +307,37 @@ updateChrome();
 const saved = JSON.parse(localStorage.getItem("tn-prefs") || "{}");
 if (saved.voice) $("voice").value = saved.voice;
 if (saved.voiceR) $("voiceR").value = saved.voiceR;
+if (saved.voiceT) $("voiceT").value = saved.voiceT;
 if (saved.vol !== undefined) $("vol").value = saved.vol;
 if (saved.follow !== undefined) $("follow").checked = saved.follow;
 if (saved.autoplay !== undefined) $("autoplay").checked = saved.autoplay;
 if (saved.through !== undefined) $("through").checked = saved.through;
 let rate = saved.rate || 1;
-let mode = saved.mode || "both";        // thinking | text | both
+const ALL_KINDS = ["thinking", "text", "tool"];
+/* Migrate the v9.0 single-mode string: "both" was the default, and tools are
+   new, so an existing user lands on everything on rather than silently
+   missing the feature they upgraded for. */
+let kinds = Array.isArray(saved.kinds) ? saved.kinds.filter(k => ALL_KINDS.includes(k))
+          : saved.mode === "thinking" ? ["thinking"]
+          : saved.mode === "text" ? ["text"]
+          : ALL_KINDS.slice();
+if (!kinds.length) kinds = ALL_KINDS.slice();
 audio.volume = parseFloat($("vol").value);
 function savePrefs() {
   localStorage.setItem("tn-prefs", JSON.stringify({
-    voice: $("voice").value, voiceR: $("voiceR").value, vol: audio.volume, rate,
-    mode, follow: $("follow").checked, autoplay: $("autoplay").checked,
+    voice: $("voice").value, voiceR: $("voiceR").value, voiceT: $("voiceT").value,
+    vol: audio.volume, rate, kinds,
+    follow: $("follow").checked, autoplay: $("autoplay").checked,
     through: $("through").checked,
   }));
 }
 
 /* ---------- read mode ---------- */
-const kindOK = kind => mode === "both" || mode === kind;
-const voiceFor = kind => (kind === "text" ? $("voiceR") : $("voice")).value;
-const nounOf = kind => kind === "text" ? "reply" : "thought";
+const kindOK = kind => kinds.includes(kind);
+const VOICE_SEL = { text: "voiceR", tool: "voiceT" };
+const voiceFor = kind => $(VOICE_SEL[kind] || "voice").value;
+const NOUN = { text: "reply", tool: "tool call" };
+const nounOf = kind => NOUN[kind] || "thought";
 /* First block at or after `from` in direction `dir` that the current mode
    plays — every transport control walks the list through this, so hidden
    kinds are skipped rather than played into a hidden card. */
@@ -313,9 +355,9 @@ function updateEmpty() {
   $("empty").style.display = selId && newestVisible(selId) >= 0 ? "none" : "";
 }
 function applyMode() {
-  $("log").className = "m-" + mode;
+  $("log").className = kinds.map(k => "k-" + k).join(" ");
   document.querySelectorAll("#mode button")
-    .forEach(b => b.classList.toggle("act", b.dataset.m === mode));
+    .forEach(b => b.classList.toggle("act", kindOK(b.dataset.k)));
   queue = queue.filter(q => kindOK(S[q.sid]?.blocks[q.idx]?.kind));
   updateEmpty();
   updateJump();
@@ -323,7 +365,13 @@ function applyMode() {
 $("mode").onclick = e => {
   const b = e.target.closest("button");
   if (!b) return;
-  mode = b.dataset.m;
+  const k = b.dataset.k;
+  if (kindOK(k)) {
+    if (kinds.length === 1) return;      // never leave nothing selected
+    kinds = kinds.filter(x => x !== k);
+  } else {
+    kinds = ALL_KINDS.filter(x => x === k || kindOK(x));   // keep canonical order
+  }
   applyMode();
   savePrefs();
 };
@@ -592,6 +640,7 @@ $("seek").oninput = () => {
 $("vol").oninput = () => { audio.volume = parseFloat($("vol").value); savePrefs(); };
 $("voice").onchange = savePrefs;
 $("voiceR").onchange = savePrefs;
+$("voiceT").onchange = savePrefs;
 $("sessSel").onchange = () => {
   $("follow").checked = false; savePrefs(); select($("sessSel").value);
 };

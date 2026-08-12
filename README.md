@@ -3,12 +3,19 @@
 Speaks Claude Code aloud, near-live or as history replay — both the
 `thinking` blocks and the printed replies, either alone or interleaved.
 
-**Read mode** (v9) is the switch: **Thoughts** (reasoning only, the original
-behavior), **Replies** (what the assistant actually printed to the terminal),
-or **Both** (default — every block in the order the CLI showed it). It is a
-segmented control in the web player's footer and `--kinds` on both CLIs.
-Thoughts and replies get separate voices, so which one is speaking is
-audible without reading the screen.
+**Read mode** (v9) is three independent toggles — **Thoughts** (reasoning),
+**Replies** (what was printed to the terminal), **Tools** (what it is doing:
+"Editing index.html", "Running: commit and push", "Searching for
+extract_blocks in narrate.py"). Any combination works, including one alone;
+turning the last one off is refused. Footer of the web player, `--kinds` on
+both CLIs. Each kind gets its own voice and its own accent colour, so what is
+speaking is clear without reading the screen.
+
+Calibration, measured on one real session: **198 tool calls to 54 thoughts
+and 59 replies.** Tool calls are roughly two thirds of everything, so leaving
+Tools on means most of what you hear is tool narration — and because speech is
+slower than generation, the queue falls behind faster with them on. That is
+the reason they are a separate toggle rather than folded into the others.
 
 Printed replies are markdown, so they are stripped to speakable prose before
 synthesis: headings, list markers, emphasis, links, and table pipes go; code
@@ -24,8 +31,8 @@ Three entry points:
 
   | want | how |
   |---|---|
-  | thoughts / replies / both | read-mode switch in the footer |
-  | tell thought from reply by ear | separate voice dropdowns (thought / reply) |
+  | pick any mix of thoughts / replies / tools | the three toggles in the footer |
+  | tell them apart by ear | a voice dropdown per kind |
   | pause / resume mid-thought | player pause button |
   | rewind / scrub inside a thought | drag the seek bar (Range-request backed) |
   | replay any past thought | click its card in the log |
@@ -145,14 +152,15 @@ py app.py --pick                           # choose a session to lock to, via me
 py app.py --session 1 --mode live          # locked to newest session, no prompts
 py app.py --session f9fc --mode last:5     # replay last 5 blocks, then follow it live
 py app.py --session 1 --mode all --once    # replay full history, then exit
-py app.py --kinds thinking                 # reasoning only (pre-v9 behavior)
-py app.py --kinds text                     # printed replies only
+py app.py --kinds thoughts                 # reasoning only (pre-v9 behavior)
+py app.py --kinds replies,tools            # skip the reasoning
 py app.py --voice-reply en-US-AriaNeural   # second voice for replies
 py app.py --list-voices
 ```
 
-- **`--kinds`** (`thinking` | `text` | `both`, default `both`) selects what is
-  read. `--mode` is unrelated — it selects *when* (live vs. history replay).
+- **`--kinds`** takes a comma-separated list of `thoughts`, `replies`, `tools`
+  — or `all` (default) / `both` (thoughts + replies, its pre-tools meaning).
+  `--mode` is unrelated: it selects *when* (live vs. history replay).
 
 - **Auto-follow (default):** narrates the session with the newest thinking
   block; when a different chat becomes active it announces the switch and
