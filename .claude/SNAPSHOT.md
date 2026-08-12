@@ -13,7 +13,7 @@ v9 adds:
 - **Read mode** — thoughts / replies / both (default **both**), a footer switch in the player and `--kinds` on both CLIs. One append-only block list per session tagged by kind, so the think→print interleaving survives and mode stays a client-side filter.
 - **Separate voices per kind** (thought vs. reply) plus a sky/amber accent per kind, so which one is speaking is clear by ear and by eye.
 - **Markdown→speech** for replies (`strip_markdown`): markers deleted, no word invented, code fences dropped. Verified 100% karaoke alignment on mixed prose+code replies.
-- **App layout** — `launch-app.bat`: Windows Terminal running `claude` left, narrator right in a chromeless Edge app window using the new compact `?panel=1` layout. Measured on 1920×1040: 1306×1040 + 614×1040.
+- **App shell** — `app-shell.bat`: ONE window that adopts the real Windows Terminal (running `claude`) and the narrator's Edge window via `SetParent`, divider between them. Arath's ruling (D13): keep Windows Terminal itself, because its tabs are how he opens and switches sessions. Closing releases the terminal instead of killing it. `launch-app.bat` keeps the same arrangement as two snapped windows, as the no-reparenting fallback (measured 1306×1040 + 614×1040 on 1920×1040).
 
 Verified this sitting: 22/22 core fixture checks (kind extraction, the `user`-record guard, sidechain filter, markdown stripping, karaoke word-order invariant); all endpoints against a fixture root; live session read back correctly (49 blocks — 25 replies, 24 thoughts, interleaved); both window placements measured.
 
@@ -24,7 +24,7 @@ Prior work (v1→v8, one session 2026-07-26, session f9fcbe9b, 10 commits, ~1.7k
 
 Verified: transcript flush timing (per message segment, ~one tool-cycle lag), block extraction, all 6 HTTP endpoints, word-timing monotonicity, per-key synth lock under concurrent requests, auto-follow switching, port-busy connect-probe.
 
-**Blocked on:** nothing. **Open ruling for Arath:** whether to embed a terminal in the page (ConPTY + xterm.js, one window, two new dependencies) or keep the two-window split shipped in D12. Deferred until the split has been used.
+**Blocked on:** Arath confirming the adopted panes are actually usable — typing/focus in the reparented terminal, and whether Windows Terminal misbehaves as a child window (tab switching, Alt+Tab, DPI, resize). Adoption itself is verified programmatically (`adopted=True`, both panes parented to the host); interaction is not machine-checkable and needs his hands on it.
 
 **Shipped same evening (7/26):** blog post "I Made Claude Code Think Out Loud" live at arath.site/blog/i-made-claude-code-think-out-loud + project page at /work/thinking-narrator; repo flipped **PUBLIC** per D9. Both pages migrate into the unified Feed when the portfolio IA burst runs.
 

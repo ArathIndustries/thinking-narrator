@@ -30,6 +30,15 @@ For the full spec, see `C:\Users\Arath\OneDrive\Claude Memory\CONVENTIONS.md` §
 - Launching a chromeless Edge app window: pass `--user-data-dir`, or an already-running Edge opens the window inside an **existing** process — no new PID, no new `MainWindowHandle`, so any placement poll times out (measured 2026-08-12). Position with `SetWindowPos` after launch; `--window-size`/`--window-position` alone are unreliable.
 - Any spoken word must exist in the raw block text, in order — the karaoke aligner (D6) scans forward with `indexOf`. Never add words to speech text; only delete markers.
 
+### Window adoption (app-shell.ps1, all measured 2026-08-12)
+
+- **`Get-Command wt.exe` returns nothing in a nested non-interactive shell** — the WindowsApps execution alias is not on PATH there. Same trap as `winget` in the hub gotchas. Resolve `%LOCALAPPDATA%\Microsoft\WindowsApps\wt.exe` explicitly. A silent fallback path hid this for two runs; make the fallback print.
+- **Windows Terminal opens new windows inside its EXISTING process** — no new PID, no new `MainWindowHandle`. Detect by enumerating top-level windows of class `CASCADIA_HOSTING_WINDOW_CLASS` and diffing, never by process. Pass `-w new` or wt may add a tab to the window Arath is already working in — which adoption would then steal.
+- **Edge does the same for a given `--user-data-dir`**: a second `--app` launch is handed to the process that already owns the profile. Find it by command line (`--app=` present, `--type=` absent = the browser process, not a renderer).
+- **Restyle before reparenting**: clear `WS_POPUP`/`WS_CAPTION`/`WS_THICKFRAME` and set `WS_CHILD`, then `SetParent`. Keep the original style so closing can restore it.
+- **`SetFocus` alone does nothing across processes** — focus is per input queue. Wrap it in `AttachThreadInput(me, targetThread, true/false)`.
+- **An adopted window dies with its host.** Any failure after adoption must `SetParent(NULL)` + restore style before rethrowing, or a live chat is destroyed by an unrelated error.
+
 ## Key file paths
 
 - Web player (main entrance): `server.py` + `index.html`, launched by `launch.bat` / desktop shortcut "Thinking Narrator"

@@ -52,6 +52,12 @@ Printed replies are markdown; read literally they are noise ("asterisk asterisk"
 
 Arath asked to interface with Claude Code in a terminal with the narrator alongside it. Shipped as `launch-app.bat`: Windows Terminal running `claude` on the left, the narrator right in a chromeless Edge app window using a new compact `?panel=1` layout. Rejected for now: embedding a terminal in the page (ConPTY/pywinpty + xterm.js), which would make it one window but adds two dependencies and re-implements a terminal Windows already provides. Revisit if daily use shows the two-window split is the friction. Placement uses `SetWindowPos` after launch and a dedicated `--user-data-dir` — both measured requirements, see ROUTING gotchas.
 
+## 2026-08-12 — D13: Adopt Windows Terminal into a host window (supersedes D12's deferral)
+
+D12 deferred the one-window app and offered the choice; Arath ruled for it immediately — "that way I can keep opening and switching between sessions whenever I want to, plus this terminal app has a lot of useful features." That last clause decided the *implementation*: the xterm.js route would have replaced Windows Terminal with a lesser terminal, losing the tabs that make session-switching work. So `app-shell.ps1` **adopts** the real windows instead — a WinForms host window, Windows Terminal reparented into the left pane via `SetParent`, the narrator's Edge app window into the right, a draggable divider between them. No new dependencies: Windows Terminal, Edge, and WinForms are already on the machine.
+
+Consequences accepted: cross-process reparenting needs styles rewritten to `WS_CHILD` before `SetParent`, and focus needs `AttachThreadInput` (focus is per input queue). Closing the shell **releases** the terminal back to the desktop as a normal window rather than destroying it, so an in-progress chat survives; any error during adoption does the same before rethrowing. Both `launch-app.*` (two windows) and `app-shell.*` (one window) ship — the two-window version stays as the no-reparenting fallback.
+
 ## 2026-07-26 — D9: Blog rulings (Arath, interactive)
 
 Repo flips public **the day the blog post ships** (not before, not never). Post angle: **"I made Claude Code think out loud"** — demo-first story ending at the karaoke player following live reasoning. Venue: **the portfolio site (arath.site)**, pending a page-order/IA review Arath opened in the same ruling session.

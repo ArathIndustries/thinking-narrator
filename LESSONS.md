@@ -88,7 +88,18 @@ was about an hour; the rest of the day was making it *good*.
    position with `SetWindowPos` → measured 614×1040 at 1306,0 on the next
    run. Placement flags alone (`--window-size`) are advisory; the Win32 call
    is not.
-9. **The first alignment test failed on a passing feature** → the test split
+9. **The single-window shell silently ran the wrong terminal, twice** → the
+   fallback from Windows Terminal to plain PowerShell was silent, so two
+   runs "succeeded" with the wrong pane. Two distinct causes stacked: (a) WT
+   opens new windows *inside its existing process*, so PID-diff detection
+   can never see one — fixed by enumerating top-level windows of class
+   `CASCADIA_HOSTING_WINDOW_CLASS`; (b) `Get-Command wt.exe` finds nothing in
+   a nested non-interactive shell, because the WindowsApps execution alias
+   is not on that PATH — fixed by resolving the alias path explicitly →
+   `wt window: found=4463202`, `terminal: WindowsTerminal`. *A silent
+   fallback is a bug report you never receive; the fix that mattered was
+   making it print what it chose.*
+10. **The first alignment test failed on a passing feature** → the test split
    spoken text on whitespace, so `real,` counted as missing from raw
    `**real**,` — but edge-tts emits WordBoundary events for *words*, not
    word+punctuation → tokenize the assertion the way the aligner is actually

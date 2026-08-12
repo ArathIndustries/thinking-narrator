@@ -41,12 +41,30 @@ Three entry points:
   silently; only newly arriving thoughts auto-play. Amber lamp = playing;
   the playing card's left rail fills with progress. Localhost-only bind.
 
-  **App layout (v9):** `launch-app.bat` puts Claude Code and the narrator
-  side by side on the primary monitor — Windows Terminal running `claude` on
-  the left, the narrator on the right in a chromeless Edge app window using
-  the compact **panel** layout (no sidebar; a session dropdown moves into the
-  header). Verified 2026-08-12 on a 1920×1040 work area: terminal 1306×1040
-  at 0,0, narrator 614×1040 at 1306,0.
+  **App shell (v9) — one window:** `app-shell.bat` is the real app. A host
+  window **adopts** two existing windows with `SetParent`: the actual Windows
+  Terminal running `claude` on the left, the narrator on the right, a
+  draggable divider between them, one taskbar entry. Adoption rather than
+  re-implementation is deliberate — Windows Terminal keeps its tabs, panes,
+  profiles and keybindings, so opening a new chat is a new terminal tab and
+  the narrator follows whichever one is active.
+
+  ```
+  app-shell.bat                                  # one window (recommended)
+  powershell -File app-shell.ps1 -PanelPercent 40
+  powershell -File app-shell.ps1 -NoClaude       # plain shell in the left pane
+  ```
+
+  Closing the shell **releases** the terminal back to the desktop as a normal
+  window instead of destroying it, so a chat in progress survives; a failure
+  during adoption releases it the same way before reporting. Needs no
+  dependencies beyond what Windows already has — Windows Terminal, Edge, and
+  WinForms.
+
+  **Two-window layout (v9):** `launch-app.bat` is the same arrangement without
+  reparenting — two separate windows snapped side by side. Kept as the
+  fallback if window adoption misbehaves. Verified 2026-08-12 on a 1920×1040
+  work area: terminal 1306×1040 at 0,0, narrator 614×1040 at 1306,0.
 
   ```
   launch-app.bat                                    # 32% narrator column
