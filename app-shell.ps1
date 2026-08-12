@@ -108,6 +108,18 @@ if (-not $Detached) {
     $fg = [TNWin]::GetForegroundWindow()
     if ([TNWin]::ClassOf($fg) -eq $WT_CLASS) { $target = $fg.ToInt64() }
   }
+  # Already nested? Raise the frame it is in rather than building a second
+  # host: re-adopting would move both panes into the new frame and leave the
+  # old one an empty orphan. Same duplicate-launch guard as the server's
+  # connect-probe, one layer up.
+  if ($target -ne 0) {
+    $existing = $U::GetParent([IntPtr]$target)
+    if ($existing -ne [IntPtr]::Zero) {
+      Write-Host "[shell] this terminal is already nested - raising the frame."
+      [void]$U::SetForegroundWindow($existing)
+      return
+    }
+  }
   $relaunch = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"",
                 "-Detached", "-Hwnd", $target, "-Port", $Port,
                 "-PanelPercent", $PanelPercent, "-StartDir", "`"$StartDir`"")

@@ -219,6 +219,12 @@ class Handler(BaseHTTPRequestHandler):
                                "text/html; charset=utf-8")
             elif u.path == "/api/sessions":
                 self.send_json(scan_sessions())
+            elif u.path == "/api/version":
+                # Lets a long-lived pane notice that index.html changed under
+                # it. The player is left open for hours inside the app shell,
+                # so without this every shipped change needs a manual reload.
+                st = os.stat(os.path.join(HERE, "index.html"))
+                self.send_json({"build": f"{int(st.st_mtime)}-{st.st_size}"})
             elif u.path == "/api/blocks":
                 path = ID2PATH.get(q.get("session", ""))
                 if path is None:

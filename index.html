@@ -687,10 +687,23 @@ main.onscroll = updateJump;
 $("jump").onclick = () => main.scrollTo({ top: main.scrollHeight, behavior: "smooth" });
 
 /* ---------- polling ---------- */
+/* Reload when the page itself changes on disk. Only while paused — a reload
+   mid-thought would lose your place, and a shipped change is never urgent
+   enough to interrupt listening. */
+let build = null;
+async function checkBuild() {
+  try {
+    const v = await j("/api/version");
+    if (build === null) { build = v.build; return; }
+    if (v.build !== build && audio.paused && !pendingKey) location.reload();
+  } catch (e) { /* older server without /api/version */ }
+}
+
 async function tick() {
   if (inflight) return;
   inflight = true;
   try {
+    checkBuild();
     sessions = await j("/api/sessions");
     if ($("follow").checked && sessions.length && sessions[0].id !== selId)
       select(sessions[0].id);
