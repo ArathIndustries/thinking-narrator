@@ -296,11 +296,10 @@ function clock(ts) {
   if (!ts) return "—";
   const d = new Date(ts);
   if (isNaN(d)) return "—";
-  const hms = `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
-  const now = new Date();
-  const sameDay = d.getFullYear() === now.getFullYear()
-               && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-  return sameDay ? hms : `${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${hms}`;
+  const ap = d.getHours() < 12 ? "AM" : "PM";
+  const h12 = d.getHours() % 12 || 12;          // 0 -> 12 AM, 12 -> 12 PM
+  return `${p2(d.getMonth() + 1)}-${p2(d.getDate())} `
+       + `${p2(h12)}:${p2(d.getMinutes())}:${p2(d.getSeconds())} ${ap}`;
 }
 const cardEl = (sid, idx) => $(`blk-${sid}-${idx}`);
 const titleOf = sid => sessions.find(s => s.id === sid)?.title || "Thinking Narrator";
@@ -471,7 +470,7 @@ function addCard(sid, b) {
     if (playing.sid === sid && playing.idx === b.idx && audio.src) {
       if (audio.paused) audio.play(); else audio.pause();   // click again = pause/resume
     } else {
-      play(sid, b.idx);
+      playManual(sid, b.idx);
     }
   };
   S[sid].el.appendChild(card);
@@ -595,6 +594,19 @@ async function play(sid, idx) {
   if (nxt >= 0) prefetch(sid, nxt);
 }
 
+/* Queue helpers. The queue is auto-play's backlog only — anything you do by
+   hand outranks it. */
+const enqueue = (sid, idx) => {
+  if (!queue.some(q => q.sid === sid && q.idx === idx)) queue.push({ sid, idx });
+};
+/* Taking over by hand drops the backlog. Without this, a block you clicked
+   plays, ends, and pump() pulls you straight back to whatever auto-play had
+   lined up — which reads as the player looping on an old chunk. */
+function playManual(sid, idx) {
+  queue = [];
+  play(sid, idx);
+}
+
 function pump() {
   if ((audio.paused || audio.ended) && !pendingKey && queue.length) {
     const n = queue.shift();
@@ -630,7 +642,7 @@ audio.ontimeupdate = () => {
 const playNewest = () => {
   if (!selId) return;
   const i = newestVisible(selId);
-  if (i >= 0) play(selId, i);
+  if (i >= 0) playManual(selId, i);
 };
 $("pp").onclick = () => {
   if (audio.paused) {
@@ -641,12 +653,12 @@ $("back").onclick = () => { audio.currentTime = Math.max(0, audio.currentTime - 
 $("prevB").onclick = () => {
   if (playing.sid === null) return;
   const i = step(playing.sid, playing.idx - 1, -1);
-  if (i >= 0) play(playing.sid, i);
+  if (i >= 0) playManual(playing.sid, i);
 };
 $("nextB").onclick = () => {
   if (playing.sid === null) { playNewest(); return; }
   const i = step(playing.sid, playing.idx + 1, 1);
-  if (i >= 0) play(playing.sid, i);
+  if (i >= 0) playManual(playing.sid, i);
 };
 $("seek").onpointerdown = () => seeking = true;
 $("seek").onpointerup = () => seeking = false;
@@ -726,6 +738,19 @@ async function tick() {
     if (selId) {
       const st = ensure(selId);
       const fresh = await j(`/api/blocks?session=${selId}&after=${st.blocks.length}`);
+      /* `after=` is an index into the SERVER's list, and that list can be
+         renumbered under a loaded page — a restart re-parses the transcript,
+         and a change to what counts as a block (replies, then tool calls)
+         makes the same prefix yield more of them. Appending across that gap
+         duplicates element ids and plays the wrong text for a card. Detect it
+         and rebuild rather than trusting the offset. */
+      if (fresh.length && fresh[0].idx !== st.blocks.length) {
+        st.blocks = []; st.el.innerHTML = ""; st.everLoaded = false; st.scroll = null;
+        queue = queue.filter(q => q.sid !== selId);
+        clearKaraoke();
+        setStatus("server re-indexed — reloading this chat");
+        return;                       // next tick refetches from 0 (finally frees the lock)
+      }
       if (fresh.length) {
         const firstLoad = !st.everLoaded;
         const pinned = main.scrollTop + main.clientHeight >= main.scrollHeight - 90;
@@ -738,13 +763,13 @@ async function tick() {
           if (firstLoad) {
             const i = newestVisible(selId);
             if (cur && i >= 0 && Date.now() / 1000 - cur.mtime < 30) {
-              queue.push({ sid: selId, idx: i });
+              enqueue(selId, i);
               prefetch(selId, i);
             }
           } else {
             for (const b of fresh) {   // synthesize on arrival, not on turn-to-play
               if (!kindOK(b.kind)) continue;
-              queue.push({ sid: selId, idx: b.idx });
+              enqueue(selId, b.idx);
               prefetch(selId, b.idx);
             }
           }
@@ -763,8 +788,9 @@ async function tick() {
     lamp.classList.toggle("pulse", $("follow").checked && $("autoplay").checked && audio.paused);
   } catch (e) {
     setStatus("server unreachable — is server.py running?");
-  }
-  inflight = false;
+  } finally {
+    inflight = false;   // finally, not trailing: an early return inside the
+  }                     // try would otherwise strand the lock and freeze polling
 }
 setInterval(tick, 1500);
 tick();

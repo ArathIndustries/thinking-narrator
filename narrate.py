@@ -58,21 +58,23 @@ def list_voices():
 
 
 def local_clock(ts):
-    """Transcript timestamp -> local HH:MM:SS.
+    """Transcript timestamp -> local 'MM-DD hh:mm:ss AM/PM'.
 
     The transcript stores UTC ISO ('2026-08-12T15:05:54.479Z'). Slicing the
     string (the original approach here) displays UTC, which on this machine
     reads five hours ahead and silently shifts the day-of. Parse and convert.
+    The date is always shown because sessions run past midnight, and 12-hour
+    with AM/PM because that is how Arath reads a clock.
     """
     if not ts:
-        return "--:--:--"
+        return "--"
     try:
         d = datetime.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
     except ValueError:
-        return str(ts)[11:19] or "--:--:--"
+        return str(ts)[11:19] or "--"
     if d.tzinfo is None:                      # naive: assume UTC, as written
         d = d.replace(tzinfo=datetime.timezone.utc)
-    return d.astimezone().strftime("%H:%M:%S")
+    return d.astimezone().strftime("%m-%d %I:%M:%S %p")
 
 
 def session_title(path):
