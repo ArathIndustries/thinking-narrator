@@ -17,6 +17,17 @@ Tools on means most of what you hear is tool narration — and because speech is
 slower than generation, the queue falls behind faster with them on. That is
 the reason they are a separate toggle rather than folded into the others.
 
+**Talk mode** (v11) turns the player into the output half of a voice loop.
+Claude Code's own `/voice` is the input (hold Space to speak; it records from
+the Windows default microphone and transcribes on Anthropic's servers). Tick
+**Talk** in the footer, or launch `narrate -Talk`, and the player switches to
+Replies only with a one-deep queue: the newest reply is what plays, anything
+queued behind it is dropped, play-through is ignored. That is `narrate.py`'s
+drop-backlog behaviour brought into the player, because a loop that has to
+answer what you just said cannot carry a backlog. The kind toggles you had
+are restored when Talk goes off. Pair it with the `speech-mode` skill so
+replies arrive as prose that survives being read aloud.
+
 Printed replies are markdown, so they are stripped to speakable prose before
 synthesis: headings, list markers, emphasis, links, and table pipes go; code
 fences are dropped (a reply that is *only* code speaks "Code block."). The
@@ -60,6 +71,7 @@ Three entry points:
   narrate -NewTerminal           # open a fresh terminal instead of nesting
   narrate -PanelPercent 40       # wider narrator column
   narrate -Hwnd <handle>         # nest one specific window
+  narrate -Talk                  # narrator opens in Talk mode (voice loop)
   app-shell.bat                  # same thing; from Explorer it opens a new terminal
   ```
 

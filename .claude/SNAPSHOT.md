@@ -1,41 +1,25 @@
 # thinking-narrator — Current Snapshot
 
-**Last updated:** 2026-08-12
+**Last updated:** 2026-09-07
 **Mode:** OVERWRITE — this file is always a snapshot of the current moment. Never append. Historical detail belongs in session summaries.
 
 ---
 
 ## Status
 
-**Phase: v9 shipped 2026-08-12 — it reads the replies too.** The B012 "new scope" turned out to be: narrate the printed responses, not just the reasoning, with a switch between them; plus an app-style side-by-side layout. Both built and verified this sitting (see D10–D12).
+**Phase: v11 built 2026-09-07 — Talk mode, the voice loop (D16).** Claude Code `/voice` in (hold Space; Windows default capture = Corsair headset mic, verified), narrator out. The narrator gained a **Talk** preset: Replies only, one-deep queue (newest wins — `narrate.py`'s drop-backlog ported to the player), play-through ignored, kinds restored on exit. Footer toggle, persisted; `?talk=1` / `narrate -Talk` forces it. Paired with the `speech-mode` skill (hub `skills/speech-mode/`, body `feedback/feedback_speech_mode_replies.md`): spoken replies are short prose, no lists / paths / code / tables.
 
-v9 adds:
-- **Read mode** — three independent toggles: thoughts / replies / **tool calls** (D15), all on by default, every combination reachable. Footer switch in the player, `--kinds thoughts,tools` on both CLIs. One append-only block list per session tagged by kind, so the think→do→print interleaving survives and mode stays a client-side filter.
-- **Separate voices and accents per kind** (amber thought / sky reply / sage tool), so what is speaking is clear by ear and by eye.
-- **Tool calls speak a summary, not arguments** — "Editing index.html", "Running: commit and push". Basenames only; `Bash` uses its description field.
-- **Markdown→speech** for replies (`strip_markdown`): markers deleted, no word invented, code fences dropped. Verified 100% karaoke alignment on mixed prose+code replies.
-- **App shell** — type `narrate` in any Windows Terminal window and THAT window is nested into a frame beside the narrator; close the frame and it is handed back plain. A toggle, not a mode (D13 + D14). Keeps real Windows Terminal (its tabs are how Arath switches sessions) rather than re-implementing a terminal. `launch-app.bat` remains the no-reparenting fallback (measured 1306×1040 + 614×1040 on 1920×1040).
+Verified this sitting: player script `node --check` clean; live server already serving the new build (the open pane reloads at its next pause); skill registered in the running session. **Not yet verified by ear** — the toggle, the drain under real replies, and whether the loop feels like a conversation.
 
-Verified this sitting: 22/22 core fixture checks (kind extraction, the `user`-record guard, sidechain filter, markdown stripping, karaoke word-order invariant); all endpoints against a fixture root; live session read back correctly (49 blocks — 25 replies, 24 thoughts, interleaved); both window placements measured.
+**Next immediate action (B110, the acid test):** Arath runs `narrate -Talk` (or ticks Talk in the footer of the pane already open), holds Space, and works a 20-minute study sitting on Capstone Quiz 2 material with the keyboard untouched except Space. Writes the verdict on the questions below into this file. Suggested but not applied (harness edits are Arath's): `"voice": {"autoSubmit": true}` in `~/.claude/settings.json` so a release sends without Enter.
 
-Prior work (v1→v8, one session 2026-07-26, session f9fcbe9b, 10 commits, ~1.7k lines):
-- **Web player** (`server.py` + `index.html`) — the main entrance. Sessions sidebar with follow-active/lock and unread badges; per-chat thought log with karaoke word highlighting (edge-tts WordBoundary timestamps); custom transport (pause/seek/−10s/prev/next/volume/speed/8 neural voices); play-through mode with next-block prefetch; media keys; keyboard shortcuts; tab title/favicon state; jump-to-newest; MP3 cache with hourly eviction. Desktop shortcut "Thinking Narrator" launches it minimized; duplicate launch just opens the page.
-- **CLI app** (`app.py`) — auto-follow the active chat with runtime lock/unlock/choose, history replay (all / last:N), neural voices with preview, space/s/q playback keys.
-- **Ambient watcher** (`narrate.py`) — all chats at once, per-session SAPI voices; also holds the shared core (Tail, extract, clean, speak).
-
-Verified: transcript flush timing (per message segment, ~one tool-cycle lag), block extraction, all 6 HTTP endpoints, word-timing monotonicity, per-key synth lock under concurrent requests, auto-follow switching, port-busy connect-probe.
-
-**Blocked on:** Arath confirming the nested panes are usable in real work — typing/focus in the reparented terminal, tab switching, Alt+Tab, DPI, resize. Mechanics are verified programmatically (nest → `adopted=True`; close → window alive, `parent=0`, style restored byte-identical); *interaction* is not machine-checkable. One path is untested by execution on purpose: bare `narrate` uses `GetForegroundWindow`, and running it from a background context would have adopted Arath's live session — it was tested via explicit `-Hwnd` against a throwaway window instead.
-
-**Shipped same evening (7/26):** blog post "I Made Claude Code Think Out Loud" live at arath.site/blog/i-made-claude-code-think-out-loud + project page at /work/thinking-narrator; repo flipped **PUBLIC** per D9. Both pages migrate into the unified Feed when the portfolio IA burst runs.
-
-**Next immediate action:** Arath runs `launch-app.bat` and works a real sitting inside it — the v9 acid test. What to watch for is listed under Open questions; nothing else gets built until that log exists.
+Prior phases (v1→v10.1): web player + karaoke, CLI app, ambient watcher, three kinds with voices per kind, tool-call summaries, markdown→speech, app shell that nests the live terminal via SetParent (D13–D15), v10.1 fixes (local timestamps, looping playback, latched auto-reload). Detail: DECISIONS.md and the session summaries in INDEX.md.
 
 ## Open questions
 
-- **Which kinds belong in the default?** Measured: 198 tool calls to 54 thoughts and 59 replies in one session — tools are ~2/3 of the stream, so all-three-on means mostly tool narration, and speech being slower than generation the queue falls behind faster. All three ship on; use decides.
-- **Does the queue need a drop-backlog option in the player?** `narrate.py` has one (speak newest, drop the rest); the web player queues everything. Tool calls make this pressing rather than theoretical.
-- Whether the two voices are distinguishable enough at speed, or whether replies want a spoken cue instead.
-- Whether dropping code fences silently is right, or whether an audible marker is wanted despite the alignment cost (D11).
-- Whether the 32% panel column is the right width in practice.
-- Whether highlight drift is perceptible on long blocks at 2× (untested by ear, carried from v8).
+- **Does Talk feel like a conversation?** Lag is about one tool cycle plus synthesis; is that acceptable when waiting for an answer, or does it want a spoken "thinking" cue?
+- **Does newest-wins drop anything you wanted?** A reply that precedes a tool run is dropped if a later reply arrives before it plays. The speech-mode skill asks for silent tool runs so this stays rare; measure it.
+- **Which kinds belong in the default for the non-Talk player?** Measured: 198 tool calls to 54 thoughts and 59 replies. Talk answers this for the loop; the reading-along case is still open.
+- Whether the reply voice (Aria) is right for a study partner, or a calmer one reads better over 20 minutes.
+- Whether dropping code fences silently is right (D11) — in Talk the skill avoids code, so this matters only outside Talk.
+- Whether the 32% panel column is the right width; whether highlight drift is perceptible at 2× (carried).

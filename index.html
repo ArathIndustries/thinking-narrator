@@ -178,6 +178,10 @@
   #upd:hover { filter: brightness(1.12); }
   #sessSel { display: none; max-width: 230px; font-size: 12.5px; }
 
+  /* ---- talk mode: the footer label lights when the loop is on ---- */
+  body.talk #talkL { color: var(--sky, #7FB8E8); }
+  body.talk #mode { opacity: .55; }
+
   /* ---- panel: compact sidecar for docking beside a terminal ---- */
   body.panel aside { display: none; }
   body.panel .body { grid-template-columns: 1fr; }
@@ -270,6 +274,7 @@
   <label class="tog" title="After a thought ends, keep playing the next one"><input type="checkbox" id="through"> Play through</label>
   <label class="tog"><input type="checkbox" id="follow" checked> Follow active chat</label>
   <label class="tog"><input type="checkbox" id="autoplay" checked> Auto-read new</label>
+  <label class="tog" id="talkL" title="Talk mode: replies only, newest wins — the conversation loop for /voice"><input type="checkbox" id="talk"> Talk</label>
 </footer>
 
 <script>
@@ -342,6 +347,16 @@ let kinds = Array.isArray(saved.kinds) ? saved.kinds.filter(k => ALL_KINDS.inclu
           : saved.mode === "text" ? ["text"]
           : ALL_KINDS.slice();
 if (!kinds.length) kinds = ALL_KINDS.slice();
+/* Talk mode (v11): the /voice conversation loop. Replies only, and the queue
+   keeps just the newest block — narrate.py's drop-backlog, ported. Measured
+   8/12: with Tools on the queue never drains, so a loop that has to answer
+   the thing you just said cannot afford a backlog at all. `?talk=1` on the
+   URL forces it on (the shell's -Talk switch); otherwise the last saved
+   state holds. The kinds you had before are kept so turning Talk off puts
+   them back rather than leaving you on Replies-only by surprise. */
+let talk = new URLSearchParams(location.search).get("talk") === "1" || !!saved.talk;
+let kindsBeforeTalk = Array.isArray(saved.kindsBeforeTalk) ? saved.kindsBeforeTalk : kinds.slice();
+if (talk) kinds = ["text"];
 audio.volume = parseFloat($("vol").value);
 function savePrefs() {
   localStorage.setItem("tn-prefs", JSON.stringify({
@@ -349,6 +364,7 @@ function savePrefs() {
     vol: audio.volume, rate, kinds,
     follow: $("follow").checked, autoplay: $("autoplay").checked,
     through: $("through").checked,
+    talk, kindsBeforeTalk,
   }));
 }
 
@@ -386,6 +402,7 @@ $("mode").onclick = e => {
   const b = e.target.closest("button");
   if (!b) return;
   const k = b.dataset.k;
+  if (talk) setTalk(false, /*restore*/ false);   // a hand edit outranks the preset
   if (kindOK(k)) {
     if (kinds.length === 1) return;      // never leave nothing selected
     kinds = kinds.filter(x => x !== k);
@@ -396,6 +413,24 @@ $("mode").onclick = e => {
   savePrefs();
 };
 
+function setTalk(on, restore = true) {
+  if (on && !talk) kindsBeforeTalk = kinds.slice();
+  talk = on;
+  $("talk").checked = on;
+  document.body.classList.toggle("talk", on);
+  if (on) {
+    kinds = ["text"];
+    $("autoplay").checked = true;      // the loop is pointless without it
+    $("follow").checked = true;        // and it follows the chat you are talking to
+    queue = queue.slice(-1);           // drop whatever backlog was waiting
+  } else if (restore && kindsBeforeTalk.length) {
+    kinds = ALL_KINDS.filter(k => kindsBeforeTalk.includes(k));
+  }
+  applyMode();
+  savePrefs();
+}
+$("talk").onchange = () => setTalk($("talk").checked);
+setTalk(talk, false);
 applyMode();
 
 /* panel layout: compact, sidebar hidden — for docking beside a terminal */
@@ -602,6 +637,7 @@ async function play(sid, idx) {
 /* Queue helpers. The queue is auto-play's backlog only — anything you do by
    hand outranks it. */
 const enqueue = (sid, idx) => {
+  if (talk) { queue = [{ sid, idx }]; return; }     // newest wins; nothing waits
   if (!queue.some(q => q.sid === sid && q.idx === idx)) queue.push({ sid, idx });
 };
 /* Taking over by hand drops the backlog. Without this, a block you clicked
@@ -622,7 +658,7 @@ function pump() {
 audio.onended = () => {
   lamp.classList.remove("on"); $("pp").textContent = "▶"; updateChrome();
   maybeReload();               // end of a block is the seam that costs nothing
-  if ($("through").checked && playing.sid !== null) {
+  if (!talk && $("through").checked && playing.sid !== null) {
     const nxt = step(playing.sid, playing.idx + 1, 1);
     if (nxt >= 0) {
       queue = queue.filter(q => !(q.sid === playing.sid && q.idx <= nxt));
@@ -791,8 +827,8 @@ async function tick() {
               prefetch(selId, i);
             }
           } else {
-            for (const b of fresh) {   // synthesize on arrival, not on turn-to-play
-              if (!kindOK(b.kind)) continue;
+            const vis = fresh.filter(b => kindOK(b.kind));
+            for (const b of talk ? vis.slice(-1) : vis) {   // synthesize on arrival, not on turn-to-play
               enqueue(selId, b.idx);
               prefetch(selId, b.idx);
             }

@@ -79,3 +79,13 @@ Cache key bumped `wb3|` → `wb4|`: `idx` shifted again when tool blocks joined 
 ## 2026-07-26 — D9: Blog rulings (Arath, interactive)
 
 Repo flips public **the day the blog post ships** (not before, not never). Post angle: **"I made Claude Code think out loud"** — demo-first story ending at the karaoke player following live reasoning. Venue: **the portfolio site (arath.site)**, pending a page-order/IA review Arath opened in the same ruling session.
+
+## 2026-09-07 — D16: Talk mode — the narrator becomes half of a voice loop
+
+Arath, having verified `/voice` works ("I just hold down the space bar, and you seem to be able to hear me"): "could we wrap all of the 'voice in' and 'narration out' into something similar to how it works on mobile?" The reason given: "being able to talk to you and get you to talk back is where I can start to engage with my course content a little better."
+
+Ruling: no new speech path. Claude Code's own `/voice` (hold Space; Windows default capture device, verified 9/07 = Corsair HS60 headset mic; transcription server-side) is the input, and the narrator is the output. What the narrator needed was a **preset**, not a feature: Replies only, and `narrate.py`'s drop-backlog drain ported into the player as a one-deep queue. Measured 8/12: with Tools on the queue never drains — a loop that must answer what was just said cannot carry a backlog. So `Talk` is a footer toggle (persisted), `?talk=1` forces it (the shell's `-Talk` switch), a hand edit of the kind toggles leaves Talk, and the kinds held before Talk are restored on exit. Play-through is ignored while Talk is on, since walking to the next block is the backlog by another name.
+
+The other half is prompt-level: a `speech-mode` skill (hub `skills/speech-mode/`, body `feedback/feedback_speech_mode_replies.md`) that switches replies to short prose with no lists, paths, code, or tables, because `strip_markdown` deletes markers and drops fences, so layout does not survive into audio.
+
+Absorbs B089 (v10 acid test) into B110: the first real Talk sitting on course material is the acid test, and it answers the "Tools by default" and "drop-backlog in the player" questions by construction — Talk is the setting the use case needed. Not built, deliberately: open-mic barge-in and phone-side audio; neither exists in Claude Code, and a custom speech-to-text path would be a parallel system rather than an extension.

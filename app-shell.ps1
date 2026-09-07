@@ -18,6 +18,8 @@
 #   ...  -PanelPercent 40    # wider narrator column
 #   ...  -NoClaude           # with -NewTerminal: plain shell, do not run claude
 #   ...  -Hwnd <handle>      # nest a specific window
+#   ...  -Talk               # open the narrator in Talk mode (replies only,
+#                            #   newest wins) — the /voice conversation loop
 #
 # Invoked from anywhere that is not a Windows Terminal window (a shortcut,
 # Explorer), it opens a fresh terminal instead — there is nothing to nest.
@@ -31,6 +33,7 @@ param(
   [switch]$NoClaude,
   [switch]$NewTerminal,       # force a fresh terminal instead of nesting this one
   [long]$Hwnd = 0,            # explicit terminal window to adopt
+  [switch]$Talk,              # narrator opens in Talk mode (?talk=1)
   [switch]$Detached           # internal: set on the relaunched window-owning process
 )
 
@@ -125,6 +128,7 @@ if (-not $Detached) {
                 "-PanelPercent", $PanelPercent, "-StartDir", "`"$StartDir`"")
   if ($NoClaude)    { $relaunch += "-NoClaude" }
   if ($NewTerminal) { $relaunch += "-NewTerminal" }
+  if ($Talk)        { $relaunch += "-Talk" }
   Start-Process "powershell" -ArgumentList $relaunch -WindowStyle Hidden
   if ($target -ne 0) {
     Write-Host "[shell] nesting this terminal (hwnd=$target) alongside the narrator."
@@ -334,7 +338,7 @@ $profileDir = Join-Path $env:LOCALAPPDATA "thinking-narrator\edge-profile"
 $edgeProc = Find-NarratorWindow $profileDir 1200        # already open? adopt that one
 if ($null -eq $edgeProc) {
   Start-Process $edge -ArgumentList @(
-    "--app=http://127.0.0.1:$Port/?panel=1",
+    "--app=http://127.0.0.1:$Port/?panel=1$(if ($Talk) { '&talk=1' })",
     "--user-data-dir=`"$profileDir`"",   # dedicated profile: own window, own prefs
     "--no-first-run", "--no-default-browser-check")
   $edgeProc = Find-NarratorWindow $profileDir 20000
